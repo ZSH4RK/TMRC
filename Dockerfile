@@ -1,4 +1,7 @@
-FROM ubuntu:latest
-LABEL authors="iamac"
+FROM zsh4rk/trackmania_rl_framework:1.0.0
 
-ENTRYPOINT ["top", "-b"]
+COPY agent /agent
+
+COPY entrypoint.sh /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
