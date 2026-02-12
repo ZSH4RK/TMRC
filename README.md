@@ -9,8 +9,8 @@ The Trinity Machine Racing Championship is a competition run at Trinity School, 
 MVP 4-5 <br>
 Nice To Have 6- <br>
 
-- [ ] TMNF running with TMInterface loading onto a specific map (A01) from Commandline
-- [ ] Get a basic model that just drives forward running from Command Line
+- [X] TMNF running with TMInterface loading onto a specific map (A01) from Commandline
+- [X] Get a basic model that just drives forward running from Command Line
 - [ ] Use Docker to package the model and allow participants to use their own models
 - [ ] Logging mechanism for results eg. Distance Covered or Racetime, Timestamp, inputs performed (In the form of a TMNF Replay file)
 - [ ] Allow results to be sent back to host Computer and saved
@@ -22,3 +22,11 @@ Nice To Have 6- <br>
 * TMInterface
 * Docker
 * Commandline
+
+
+### Steps
+#### 1 - Command Line Loading
+I used TMModloader to inject TMInterface into Trackmania Nations Forever. I found a Plugin created by the Linesight team, written in AngelScript (The only language that TMModloader and TMInterface support) that connects to a reverse engineered TMInterface API, since the real one was depreciated when TMModloader was released. Using this API I can gather the game state and send inputs to Trackmania from running `agent.py` in the commandline. <br>
+
+#### 2 - Simplest Possible Model
+My model recieves the game state from the `Python_Link.as` plugin and just drives forward. It also automatically sends the commands `set autologin 1` (first profile), `set custom_port <port>` and `map A01-Race.Challenge.Gbx` in the TMInterface commandline. This skips the offline only and profile selection screenm and loads directly into the selected map.
