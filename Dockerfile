@@ -1,4 +1,4 @@
-FROM zsh4rk/trackmania_rl_framework:rendering-1.0.0 AS base
+FROM zsh4rk/trackmania_rl_framework:1.0.0 AS base
 
 USER root
 
@@ -10,6 +10,11 @@ RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 RUN pip install numpy tminterface
+
+# Configure TMInterface to listen on port 8775
+RUN mkdir -p /home/wineuser/.wine/drive_c/users/wineuser/Documents/TMInterface
+RUN echo "custom_port=8775" > /home/wineuser/.wine/drive_c/users/wineuser/Documents/TMInterface/config.txt
+RUN chown -R wineuser:wineuser /home/wineuser/.wine/drive_c/users/wineuser/Documents/TMInterface
 
 FROM base
 

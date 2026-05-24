@@ -18,17 +18,31 @@ def start_tmnf():
     def run_in_thread():
         try:
             print(f"Starting TMNF: {TM_EXE}")
+            print(f"TMNF_DIR exists: {TM_EXE.parent.exists()}")
+            print(f"TMLoader.exe exists: {TM_EXE.exists()}")
+
             proc = subprocess.Popen(
                 ["wine", str(TM_EXE)],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True
             )
-            # Wait for process to complete (should run indefinitely)
-            proc.wait()
+            print(f"TMNF process started with PID: {proc.pid}")
+
+            # Read output in the thread to avoid blocking
+            while proc.poll() is None:
+                time.sleep(1)
+
+            stdout, stderr = proc.communicate(timeout=5)
+            if stdout:
+                print(f"TMNF stdout: {stdout[:500]}")
+            if stderr:
+                print(f"TMNF stderr: {stderr[:500]}")
             print(f"TMNF process exited with code: {proc.returncode}")
         except Exception as e:
             print(f"Error starting TMNF: {e}")
+            import traceback
+            traceback.print_exc()
 
     thread = threading.Thread(target=run_in_thread, daemon=True)
     thread.start()
