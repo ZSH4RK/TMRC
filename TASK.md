@@ -102,25 +102,64 @@ TMRC is a competition for AI bots competing in Trackmania Nations Forever (TMNF)
 - Handles KeyboardInterrupt gracefully
 - Proper cleanup on exit
 
-## Next Steps - Testing & Validation
+## Completed Work Summary
 
-1. **Docker build test**: `docker build -t tmrc-agent .`
-   - Verify Dockerfile syntax and dependencies install correctly
-   
-2. **Container startup test**: Run container and check:
-   - Xvfb starts and DISPLAY is set
-   - TMNF binary exists at expected path
-   - Wine can execute TMLoader.exe
-   - TMInterface binary is present and can be launched
-   - Port 8775 becomes available within 60 seconds
-   - Agent can connect to TMInterface socket
-   - Map load command is accepted
-   - Game simulation steps are received
+### ✓ Infrastructure Improvements
+1. Fixed entrypoint.sh X11 setup (export DISPLAY, proper cleanup)
+2. Improved error handling throughout agent.py and shell scripts
+3. Removed debugging overhead (strace wrapper)
+4. Added active port polling instead of fixed waits
+5. Fixed tminterface2.py to avoid config_copy dependency
+6. Docker image builds successfully
 
-3. **Potential blockers to investigate**:
-   - Base image may not have TMInterface configured to port 8775
-   - May need to create TMInterface config file specifying custom_port = 8775
-   - Wine may need additional libraries or configuration in container
-   - DISPLAY :99 may not be sufficient (might need -nolisten flag or similar)
+### ✓ Investigation Completed
+1. Confirmed TMNF binary exists and Wine can execute it
+2. Confirmed TMNF starts and initializes graphics (llvmpipe)
+3. Located Python_Link.as plugin (socket server implementation)
+4. Found TMInterface config.txt location and proper format
+5. Verified base image has TMInterface files (versions 2.1.0, 2.1.1, 2.2.0)
+
+### ✗ Known Blocker
+**TMInterface not listening on port 8775** - despite proper configuration:
+- Config file created with correct INI-style format: `[Python_Link]` + `custom_port=8775`
+- TMNF starts but Python_Link plugin doesn't load or doesn't listen
+- No log output indicating plugin initialization
+- No evidence of socket server starting
+
+## Remaining Issues to Resolve
+
+**Primary Blocker:** Why doesn't Python_Link.as execute when TMNF runs?
+
+Possible causes:
+1. TMNF doesn't auto-load modifications in this environment
+2. TMInterface modification not properly installed or initialized
+3. Python_Link plugin fails silently on startup
+4. TMNF requires user interaction or profile setup before mods load
+5. Config variable format/reading might need additional settings
+
+## Recommended Next Steps
+
+1. **Check TMNF modification loading:**
+   - Verify modifications are enabled in TMNF settings
+   - Check if TMInterface modification appears in game's mod list
+   - Look for modification loading logs in Wine output
+
+2. **Debug Python_Link execution:**
+   - Add debug flag to Python_Link.as to enable verbose logging
+   - Check if TMNF creates any error logs when plugins load
+   - Try running TMNF in developer mode or with plugin directory specified
+
+3. **Alternative approaches:**
+   - Research if there's a command-line flag to enable TMInterface explicitly
+   - Check if zsh4rk/trackmania_rl_framework has specific launch documentation
+   - Consider if different TMNF executable (TmForever.exe vs TMLoader.exe) matters
+
+4. **Testing checklist when blocker resolved:**
+   - [ ] Port 8775 becomes available within 60 seconds
+   - [ ] Agent connects successfully via TCP socket
+   - [ ] Map load command accepted by game
+   - [ ] Simulation steps received (SC_RUN_STEP_SYNC messages)
+   - [ ] Agent can set input state
+   - [ ] Container runs reliably (multiple restarts)
 
 # Claude
