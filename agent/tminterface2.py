@@ -9,13 +9,13 @@ import signal
 import socket
 import struct
 from enum import IntEnum, auto
+from sys import platform
 
 import numpy as np
 from tminterface.structs import CheckpointData, SimStateData
 
-from config_files import config_copy
-
 HOST = "127.0.0.1"
+is_linux = platform in ["linux", "linux2"]
 
 
 class MessageType(IntEnum):
@@ -65,7 +65,7 @@ class TMInterface:
         # https://stackoverflow.com/questions/45864828/msg-waitall-combined-with-so-rcvtimeo
         # https://stackoverflow.com/questions/2719017/how-to-set-timeout-on-pythons-socket-recv-method
         if timeout is not None:
-            if config_copy.is_linux:  # https://stackoverflow.com/questions/46477448/python-setsockopt-what-is-worng
+            if is_linux:
                 timeout_pack = struct.pack("ll", timeout, 0)
             else:
                 timeout_pack = struct.pack("q", timeout * 1000)
