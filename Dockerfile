@@ -13,7 +13,7 @@ RUN pip install numpy tminterface
 
 # Configure TMInterface to listen on port 8775
 RUN mkdir -p /home/wineuser/.wine/drive_c/users/wineuser/Documents/TMInterface
-RUN echo "custom_port=8775" > /home/wineuser/.wine/drive_c/users/wineuser/Documents/TMInterface/config.txt
+RUN printf "[Python_Link]\ncustom_port=8775\n" > /home/wineuser/.wine/drive_c/users/wineuser/Documents/TMInterface/config.txt
 RUN chown -R wineuser:wineuser /home/wineuser/.wine/drive_c/users/wineuser/Documents/TMInterface
 
 FROM base
