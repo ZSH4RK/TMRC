@@ -1,0 +1,10 @@
+program:
+  id: TmForever
+  version: '2.12.0-compat'
+args: GameData\Tracks\Campaigns\Nations\White\A01-Race.Challenge.Gbx
+mods:
+  - id: TMInterface
+    version: 2.1.1
+  - id: TMUnlimiter
+  - id: CoreMod
+    version: 1.0.3

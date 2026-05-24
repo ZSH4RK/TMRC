@@ -24,7 +24,7 @@ fi
 # Start TrackMania + agent
 # The agent will handle starting TMNF and connecting to TMInterface
 echo "Starting agent..."
-python3 "/agent/agent.py"
+PYTHONUNBUFFERED=1 python3 -u "/agent/agent.py"
 AGENT_EXIT=$?
 
 # Cleanup

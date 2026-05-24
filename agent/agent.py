@@ -11,33 +11,26 @@ from pathlib import Path
 
 PORT = 8775  # must match `custom_port`
 
-TM_EXE = Path(os.environ["TMNF_DIR"]) / "TMLoader.exe"
+TMNF_DIR = Path(os.environ["TMNF_DIR"])
+TM_EXE = TMNF_DIR / "TmForever.exe"
+TMLOADER_EXE = TMNF_DIR / "TMLoader.exe"
 
 def start_tmnf():
-    """Start TMNF in background thread"""
+    """Start TMLoader (which injects mods and launches TmForever) in background thread"""
     def run_in_thread():
         try:
-            print(f"Starting TMNF: {TM_EXE}")
-            print(f"TMNF_DIR exists: {TM_EXE.parent.exists()}")
-            print(f"TMLoader.exe exists: {TM_EXE.exists()}")
+            exe = TMLOADER_EXE if TMLOADER_EXE.exists() else TM_EXE
+            print(f"Starting: {exe}")
+            print(f"Exists: {exe.exists()}")
 
             proc = subprocess.Popen(
-                ["wine", str(TM_EXE)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
+                ["wine", str(exe)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                cwd=str(exe.parent),  # game must run from its own directory
             )
             print(f"TMNF process started with PID: {proc.pid}")
-
-            # Read output in the thread to avoid blocking
-            while proc.poll() is None:
-                time.sleep(1)
-
-            stdout, stderr = proc.communicate(timeout=5)
-            if stdout:
-                print(f"TMNF stdout: {stdout[:500]}")
-            if stderr:
-                print(f"TMNF stderr: {stderr[:500]}")
+            proc.wait()
             print(f"TMNF process exited with code: {proc.returncode}")
         except Exception as e:
             print(f"Error starting TMNF: {e}")
@@ -47,6 +40,55 @@ def start_tmnf():
     thread = threading.Thread(target=run_in_thread, daemon=True)
     thread.start()
     return thread
+
+def xdotool(*args):
+    """Run xdotool command with DISPLAY set"""
+    subprocess.run(["xdotool"] + list(args),
+                   env={**os.environ, "DISPLAY": ":99"},
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def navigate_to_race():
+    """Navigate TMNF menus to start A01-Race automatically.
+
+    All coordinates are absolute screen coords on the 1024x768 Xvfb display.
+    The TmForever window is at (4, 30), size 640x480, no WM decorations.
+    """
+    result = subprocess.run(
+        ["xdotool", "search", "--name", "TrackMania Modded Forever"],
+        capture_output=True, text=True,
+        env={**os.environ, "DISPLAY": ":99"}
+    )
+    windows = [w for w in result.stdout.strip().split("\n") if w]
+    if not windows:
+        print("WARNING: Could not find TmForever window for navigation")
+        return
+    win_id = windows[0]
+    print(f"Found TM window: {win_id}")
+
+    xdotool("windowfocus", "--sync", win_id)
+    time.sleep(1)
+
+    # Click Play Solo (window coords: x=66, y=70 = screen 70,100 given window at 4,30)
+    xdotool("mousemove", "--window", win_id, "66", "70")
+    xdotool("click", "--window", win_id, "1")
+    print("Clicked Play Solo")
+    time.sleep(5)
+
+    # Click White repeatedly until track thumbnails appear (sometimes needs multiple clicks)
+    for _ in range(3):
+        xdotool("mousemove", "67", "101")
+        time.sleep(0.3)
+        xdotool("click", "1")
+        time.sleep(1)
+    print("Clicked White (x3)")
+    time.sleep(2)
+
+    # Double-click A01-Race at thumbnail center (first track in White campaign)
+    xdotool("mousemove", "213", "190")
+    time.sleep(0.3)
+    xdotool("click", "--repeat", "2", "1")
+    print("Clicked A01-Race, waiting for race to load...")
+    time.sleep(5)
 
 def wait_for_tminterface(port, timeout=60, check_interval=1):
     """Wait for TMInterface to be listening on the given port"""
@@ -86,6 +128,11 @@ if not wait_for_tminterface(PORT, timeout=60):
 
 print("TMInterface is ready!")
 
+# Navigate menus to start A01-Race
+print("Navigating to A01-Race...")
+time.sleep(8)  # Allow main menu to fully render
+navigate_to_race()
+
 def main():
     try:
         print("Connecting to TMInterface on port", PORT)
@@ -95,9 +142,7 @@ def main():
 
         sock = tm.sock  # direct access is intentional here
 
-        print("Loading map A01-Race...")
-        tm.execute_command('map r"A01-Race.Challenge.Gbx"')
-        print("✓ Map load command sent")
+        print("Race started via menu navigation; waiting for simulation steps...")
 
         step_count = 0
         while True:
@@ -135,6 +180,9 @@ def main():
             except KeyboardInterrupt:
                 print("\nShutdown requested")
                 break
+            except BlockingIOError:
+                # SO_RCVTIMEO expired — no data yet, retry (map still loading etc.)
+                continue
             except struct.error as e:
                 print(f"Protocol error: {e}")
                 break
