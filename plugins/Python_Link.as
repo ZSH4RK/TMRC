@@ -351,6 +351,13 @@ void Render(){
             on_connect_queued = true;
         }
     }
+    // Drain pending commands (e.g. map) sent by the agent while in menus,
+    // where no race callbacks fire to call HandleMessage().
+    if(@clientSock !is null && GetCurrentGameState() == TM::GameState::Menus){
+        while(clientSock.Available > 0){
+            HandleMessage();
+        }
+    }
     if(next_frame_requested_H>=0){
         const auto@ frame = Graphics::CaptureScreenshot(vec2(next_frame_requested_W,next_frame_requested_H));
         clientSock.Write(MessageType::SCRequestedFrameSync);

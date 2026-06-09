@@ -23,11 +23,14 @@ def start_tmnf():
             print(f"Starting: {exe}")
             print(f"Exists: {exe.exists()}")
 
+            log_path = Path("/home/wineuser/logs/tmloader.log")
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_file = open(log_path, "w")
             proc = subprocess.Popen(
-                ["wine", str(exe)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                cwd=str(exe.parent),  # game must run from its own directory
+                ["vglrun", "wine", str(exe)],
+                stdout=log_file,
+                stderr=log_file,
+                cwd=str(exe.parent),
             )
             print(f"TMNF process started with PID: {proc.pid}")
             proc.wait()
@@ -41,54 +44,7 @@ def start_tmnf():
     thread.start()
     return thread
 
-def xdotool(*args):
-    """Run xdotool command with DISPLAY set"""
-    subprocess.run(["xdotool"] + list(args),
-                   env={**os.environ, "DISPLAY": ":99"},
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-def navigate_to_race():
-    """Navigate TMNF menus to start A01-Race automatically.
-
-    All coordinates are absolute screen coords on the 1024x768 Xvfb display.
-    The TmForever window is at (4, 30), size 640x480, no WM decorations.
-    """
-    result = subprocess.run(
-        ["xdotool", "search", "--name", "TrackMania Modded Forever"],
-        capture_output=True, text=True,
-        env={**os.environ, "DISPLAY": ":99"}
-    )
-    windows = [w for w in result.stdout.strip().split("\n") if w]
-    if not windows:
-        print("WARNING: Could not find TmForever window for navigation")
-        return
-    win_id = windows[0]
-    print(f"Found TM window: {win_id}")
-
-    xdotool("windowfocus", "--sync", win_id)
-    time.sleep(1)
-
-    # Click Play Solo (window coords: x=66, y=70 = screen 70,100 given window at 4,30)
-    xdotool("mousemove", "--window", win_id, "66", "70")
-    xdotool("click", "--window", win_id, "1")
-    print("Clicked Play Solo")
-    time.sleep(5)
-
-    # Click White repeatedly until track thumbnails appear (sometimes needs multiple clicks)
-    for _ in range(3):
-        xdotool("mousemove", "67", "101")
-        time.sleep(0.3)
-        xdotool("click", "1")
-        time.sleep(1)
-    print("Clicked White (x3)")
-    time.sleep(2)
-
-    # Double-click A01-Race at thumbnail center (first track in White campaign)
-    xdotool("mousemove", "213", "190")
-    time.sleep(0.3)
-    xdotool("click", "--repeat", "2", "1")
-    print("Clicked A01-Race, waiting for race to load...")
-    time.sleep(5)
 
 def wait_for_tminterface(port, timeout=60, check_interval=1):
     """Wait for TMInterface to be listening on the given port"""
@@ -117,32 +73,50 @@ print("=== TMRC Agent Starting ===")
 print(f"TMNF_DIR: {os.environ.get('TMNF_DIR', 'NOT SET')}")
 print(f"DISPLAY: {os.environ.get('DISPLAY', 'NOT SET')}")
 
-# Start TMNF
+# Start TMNF (TMLoader auto-launches TmForever+mods via autoLaunch() in index.jsx)
 start_tmnf()
 
-# Wait for TMInterface to be ready (give it up to 60 seconds)
-print("Waiting for TMInterface to be ready...")
-if not wait_for_tminterface(PORT, timeout=60):
-    print("ERROR: TMInterface failed to become available")
-    sys.exit(1)
+# Wait for game and TMInterface to start.
+# We do NOT use wait_for_tminterface (raw TCP port check) here — the plugin's
+# Render() detects every TCP connect as a real client, calls OnConnect(), and
+# waits 2000ms for a handshake that never comes from a port-check close.
+print("Waiting 20s for game and TMInterface to start...")
+time.sleep(20)
 
-print("TMInterface is ready!")
+print("TMInterface ready, connecting...")
 
-# Navigate menus to start A01-Race
-print("Navigating to A01-Race...")
-time.sleep(8)  # Allow main menu to fully render
-navigate_to_race()
+def get_game_state(tm):
+    """Returns position (x,y,z) and velocity (x,y,z) from the current simulation state."""
+    state = tm.get_simulation_state()
+    return {
+        "position": (state.position[0], state.position[1], state.position[2]),
+        "velocity": (state.velocity[0], state.velocity[1], state.velocity[2]),
+    }
+
+
+def send_input(tm, left=False, right=False, accelerate=False, brake=False):
+    """Send driver inputs to the game."""
+    tm.set_input_state(left=left, right=right, accelerate=accelerate, brake=brake)
+
 
 def main():
     try:
         print("Connecting to TMInterface on port", PORT)
         tm = TMInterface(PORT)
         tm.register(timeout=5)
-        print("✓ Agent connected to TMInterface")
+        sock = tm.sock
 
-        sock = tm.sock  # direct access is intentional here
+        # Pre-buffer SCOnConnectSync echo — plugin's WaitForResponse finds it
+        # instantly on first Available check, preventing the 2000ms timeout.
+        sock.sendall(struct.pack("i", MessageType.SC_ON_CONNECT_SYNC))
+        print("✓ Connected")
 
-        print("Race started via menu navigation; waiting for simulation steps...")
+        # Load the map so a race starts. TMInterface searches under the user Tracks
+        # folder; A01-Race is staged at Tracks/Challenges/ by the Dockerfile.
+        print("Loading map...")
+        tm.execute_command('map A01-Race.Challenge.Gbx')
+
+        print("Waiting for simulation steps...")
 
         step_count = 0
         while True:
@@ -154,23 +128,26 @@ def main():
                     # read race time (int)
                     race_time = struct.unpack("i", sock.recv(4))[0]
 
+                    # get position and velocity from sim state
+                    game_state = get_game_state(tm)
+
                     if step_count % 100 == 0:
-                        print(f"Simulation step {step_count}, race_time={race_time}ms")
+                        pos = game_state["position"]
+                        vel = game_state["velocity"]
+                        print(f"Step {step_count}, race_time={race_time}ms, "
+                              f"pos=({pos[0]:.1f},{pos[1]:.1f},{pos[2]:.1f}), "
+                              f"vel=({vel[0]:.1f},{vel[1]:.1f},{vel[2]:.1f})")
                     step_count += 1
+
+                    # always drive forward
+                    send_input(tm, accelerate=True)
 
                     # acknowledge step (THIS UNBLOCKS THE SIM)
                     sock.sendall(struct.pack("i", MessageType.SC_RUN_STEP_SYNC))
 
-                    # always press gas
-                    tm.set_input_state(
-                        left=False,
-                        right=False,
-                        accelerate=True,
-                        brake=False
-                    )
-
                 elif msg_type == MessageType.SC_ON_CONNECT_SYNC:
-                    print("✓ Connection sync received")
+                    # Shouldn't arrive here — already pre-acknowledged on connect
+                    # but handle it just in case of reconnect
                     sock.sendall(struct.pack("i", MessageType.SC_ON_CONNECT_SYNC))
 
                 else:
