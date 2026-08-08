@@ -21,7 +21,7 @@ RUN chown wineuser:wineuser /home/wineuser/.wine/drive_c/users/wineuser/Document
 COPY plugins/index.jsx /home/wineuser/.wine/drive_c/Program_Files_x86/TmNationsForever/ui/layouts/default/index.jsx
 RUN chown wineuser:wineuser /home/wineuser/.wine/drive_c/Program_Files_x86/TmNationsForever/ui/layouts/default/index.jsx
 
-# Pass A01-Race challenge path as args so TmForever auto-starts that race on launch.
+# Pass A03-Race challenge path as args so TmForever auto-starts that race on launch.
 COPY plugins/default.yaml /home/wineuser/.wine/drive_c/Program_Files_x86/TmNationsForever/database/TmForever/profiles/default.yaml
 RUN chown wineuser:wineuser /home/wineuser/.wine/drive_c/Program_Files_x86/TmNationsForever/database/TmForever/profiles/default.yaml
 

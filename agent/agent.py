@@ -9,7 +9,13 @@ import subprocess
 import threading
 from pathlib import Path
 
-PORT = 8775  # must match `custom_port`
+import my_agent
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "Tracks"))
+from interpolate_track import TrackInterpolator, Vec3
+
+PORT = int(os.environ.get("TMI_PORT", 8775))  # must match `custom_port`
+GAME_SPEED = float(os.environ.get("TM_GAME_SPEED", "1.0"))
 
 TMNF_DIR = Path(os.environ["TMNF_DIR"])
 TM_EXE = TMNF_DIR / "TmForever.exe"
@@ -45,58 +51,48 @@ def start_tmnf():
     return thread
 
 
-
-def wait_for_tminterface(port, timeout=60, check_interval=1):
-    """Wait for TMInterface to be listening on the given port"""
-    import socket
-    start_time = time.time()
-
-    while time.time() - start_time < timeout:
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1)
-            result = sock.connect_ex(("127.0.0.1", port))
-            sock.close()
-
-            if result == 0:
-                print(f"TMInterface is listening on port {port}")
-                return True
-        except Exception as e:
-            print(f"Connection check failed: {e}")
-
-        time.sleep(check_interval)
-
-    print(f"Timeout waiting for TMInterface on port {port}")
-    return False
-
-print("=== TMRC Agent Starting ===")
-print(f"TMNF_DIR: {os.environ.get('TMNF_DIR', 'NOT SET')}")
-print(f"DISPLAY: {os.environ.get('DISPLAY', 'NOT SET')}")
-
-# Start TMNF (TMLoader auto-launches TmForever+mods via autoLaunch() in index.jsx)
-start_tmnf()
-
-# Wait for game and TMInterface to start.
-# We do NOT use wait_for_tminterface (raw TCP port check) here — the plugin's
-# Render() detects every TCP connect as a real client, calls OnConnect(), and
-# waits 2000ms for a handshake that never comes from a port-check close.
-print("Waiting 20s for game and TMInterface to start...")
-time.sleep(20)
-
-print("TMInterface ready, connecting...")
-
 def get_game_state(tm):
-    """Returns position (x,y,z) and velocity (x,y,z) from the current simulation state."""
+    """Returns position, velocity, and forward direction from the current simulation state."""
     state = tm.get_simulation_state()
+    rot = state.rotation_matrix  # 3x3, columns are car's local X/Y/Z axes in world space
     return {
         "position": (state.position[0], state.position[1], state.position[2]),
         "velocity": (state.velocity[0], state.velocity[1], state.velocity[2]),
+        # Third column of rotation matrix = car's local Z axis = forward direction
+        "direction": (rot[0][2], rot[1][2], rot[2][2]),
     }
+
+
+track = TrackInterpolator()
+
+
+def get_wall_distances(game_state):
+    """Cast rays from car position at my_agent.RAY_ANGLES and return distances to walls."""
+    px, py, pz = game_state["position"]
+    dx, dy, dz = game_state["direction"]
+    car_pos = Vec3(px, py, pz)
+    car_dir = Vec3(dx, dy, dz)
+    return track.cast_rays(car_pos, car_dir, my_agent.RAY_ANGLES)
 
 
 def send_input(tm, left=False, right=False, accelerate=False, brake=False):
     """Send driver inputs to the game."""
     tm.set_input_state(left=left, right=right, accelerate=accelerate, brake=brake)
+
+
+print("=== TMRC Agent Starting ===")
+print(f"TMNF_DIR: {os.environ.get('TMNF_DIR', 'NOT SET')}")
+print(f"DISPLAY: {os.environ.get('DISPLAY', 'NOT SET')}")
+
+start_tmnf()
+
+# We do NOT use a raw TCP port check here — the plugin's Render() detects every
+# TCP connect as a real client, calls OnConnect(), and waits 2000ms for a
+# handshake that never comes from a port-check close.
+print("Waiting 20s for game and TMInterface to start...")
+time.sleep(20)
+
+print("TMInterface ready, connecting...")
 
 
 def main():
@@ -111,54 +107,54 @@ def main():
         sock.sendall(struct.pack("i", MessageType.SC_ON_CONNECT_SYNC))
         print("✓ Connected")
 
-        # Load the map so a race starts. TMInterface searches under the user Tracks
-        # folder; A01-Race is staged at Tracks/Challenges/ by the Dockerfile.
+        if GAME_SPEED != 1.0:
+            tm.set_speed(GAME_SPEED)
+            print(f"Set game speed to {GAME_SPEED}x")
+
         print("Loading map...")
-        tm.execute_command('map A01-Race.Challenge.Gbx')
+        tm.execute_command('map A03-Race.Challenge.Gbx')
 
         print("Waiting for simulation steps...")
 
         step_count = 0
         while True:
-            # --- wait for server message ---
             try:
                 msg_type = struct.unpack("i", sock.recv(4))[0]
 
                 if msg_type == MessageType.SC_RUN_STEP_SYNC:
-                    # read race time (int)
                     race_time = struct.unpack("i", sock.recv(4))[0]
 
-                    # get position and velocity from sim state
                     game_state = get_game_state(tm)
+                    wall_distances = get_wall_distances(game_state)
 
                     if step_count % 100 == 0:
                         pos = game_state["position"]
                         vel = game_state["velocity"]
+                        dists = " ".join(
+                            f"{a:+d}°:{d:.1f}" if d is not None else f"{a:+d}°:--"
+                            for a, (d, _) in zip(my_agent.RAY_ANGLES, wall_distances)
+                        )
                         print(f"Step {step_count}, race_time={race_time}ms, "
                               f"pos=({pos[0]:.1f},{pos[1]:.1f},{pos[2]:.1f}), "
-                              f"vel=({vel[0]:.1f},{vel[1]:.1f},{vel[2]:.1f})")
+                              f"vel=({vel[0]:.1f},{vel[1]:.1f},{vel[2]:.1f}), "
+                              f"walls=[{dists}]")
                     step_count += 1
 
-                    # always drive forward
-                    send_input(tm, accelerate=True)
+                    inputs = my_agent.decide(game_state, wall_distances)
+                    send_input(tm, **inputs)
 
-                    # acknowledge step (THIS UNBLOCKS THE SIM)
                     sock.sendall(struct.pack("i", MessageType.SC_RUN_STEP_SYNC))
 
                 elif msg_type == MessageType.SC_ON_CONNECT_SYNC:
-                    # Shouldn't arrive here — already pre-acknowledged on connect
-                    # but handle it just in case of reconnect
                     sock.sendall(struct.pack("i", MessageType.SC_ON_CONNECT_SYNC))
 
                 else:
-                    # ignore other sync events safely
                     sock.sendall(struct.pack("i", msg_type))
 
             except KeyboardInterrupt:
                 print("\nShutdown requested")
                 break
             except BlockingIOError:
-                # SO_RCVTIMEO expired — no data yet, retry (map still loading etc.)
                 continue
             except struct.error as e:
                 print(f"Protocol error: {e}")
