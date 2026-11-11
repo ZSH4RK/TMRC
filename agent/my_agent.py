@@ -3,46 +3,45 @@ Edit this file to customize the agent's behavior.
 
 `decide` is called once per simulation step. Return a dict with the
 inputs you want to send to the car.
+
+Driving policy is the SAC actor trained by train_sac.py (see sac/agent.py /
+sac/networks.py, ported from Soft-Actor-Critic/). If no trained checkpoint
+exists yet under tmp/sac/, this drives with an untrained (randomly
+initialized) network — same placeholder behavior as before training exists.
 """
 
-import csv
 from pathlib import Path
 
-import numpy as np
+import torch
 
-# Angles (degrees) at which rays are cast from the car to measure wall distances.
-# 0 = straight ahead, negative = left, positive = right.
-RAY_ANGLES = [-90, -45, -10, 0, 10, 45, 90]
+import track_features
+from sac.networks import ActorNetwork
 
-_TRACKS_CSV = Path(__file__).parent.parent / "Tracks" / "A03-Race" / "points-offset.csv"
+# Re-exported for agent.py, which casts rays at these angles before calling
+# decide().
+RAY_ANGLES = track_features.RAY_ANGLES
 
-_mid_points = []
-with open(_TRACKS_CSV, newline="") as _f:
-    for _row in csv.DictReader(_f):
-        if _row["type"] == "mid":
-            _mid_points.append((float(_row["x"]), float(_row["y"]), float(_row["z"])))
+_CHKPT_DIR = str(Path(__file__).parent / "tmp" / "sac")
 
-_mid_xz = np.array([[p[0], p[2]] for p in _mid_points])
+# Inference-only actor. Architecture and chkpt_dir must match how train_sac.py
+# constructs its SACAgent, so the saved weights actually line up.
+model = ActorNetwork(
+    alpha=0.0003,
+    input_dims=[track_features.STATE_DIM],
+    max_action=[1.0, 1.0],
+    n_actions=2,
+    chkpt_dir=_CHKPT_DIR,
+)
+model.eval()
 
-
-def nearest_midpoint(car_x, car_z, lookahead=30.0):
-    """Return (index, nearest, lookahead) where nearest and lookahead are (x, y, z) tuples.
-
-    lookahead is the midpoint `lookahead` world units ahead along the centerline.
-    """
-    diffs = _mid_xz - np.array([car_x, car_z])
-    idx = int(np.argmin(np.sum(diffs ** 2, axis=1)))
-
-    dist = 0.0
-    n = len(_mid_points)
-    ahead_idx = idx
-    while dist < lookahead:
-        next_idx = (ahead_idx + 1) % n
-        p0, p1 = _mid_points[ahead_idx], _mid_points[next_idx]
-        dist += ((p1[0] - p0[0]) ** 2 + (p1[2] - p0[2]) ** 2) ** 0.5
-        ahead_idx = next_idx
-
-    return idx, _mid_points[idx], _mid_points[ahead_idx]
+try:
+    model.load_checkpoint()
+    print(f"Loaded trained SAC actor from {model.checkpoint_file}")
+except FileNotFoundError:
+    print(
+        f"No trained SAC actor checkpoint at {model.checkpoint_file} — "
+        "driving with an untrained (random) policy. Run train_sac.py first."
+    )
 
 
 def decide(game_state, wall_distances):
@@ -54,13 +53,19 @@ def decide(game_state, wall_distances):
             "position"  – (x, y, z) world position
             "velocity"  – (vx, vy, vz) world velocity
             "direction" – (dx, dy, dz) forward unit vector
-        wall_distances: list of (distance, hit_point) tuples, one per RAY_ANGLE.
+        wall_distances: list of (distance, wall)) tuples, one per RAY_ANGLE.
             distance is None when no wall was hit within range.
 
     Returns:
         dict with boolean keys: "left", "right", "accelerate", "brake"
     """
 
-    print(game_state)
-    print(wall_distances)
-    return dict(left=False, right=False, accelerate=True, brake=False)
+    state = track_features.build_state(game_state, wall_distances)
+    state_tensor = torch.tensor([state], dtype=torch.float32).to(model.device)
+
+    with torch.no_grad():
+        # Mean action rather than a sampled one: deterministic driving at
+        # inference time, no exploration noise.
+        action = model.deterministic_action(state_tensor)[0]
+
+    return track_features.action_to_inputs(action.cpu().numpy())

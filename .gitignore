@@ -1,2 +1,11 @@
 __pycache__/
 *.pyc
+
+# Trained SAC checkpoints + best-run recordings (bind-mounted from the host
+# in docker-compose.yml so they survive container rebuilds) — binary/large,
+# not source.
+agent/tmp/*
+!agent/tmp/.gitkeep
+
+# Local notes
+Plan.md

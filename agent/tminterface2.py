@@ -6,6 +6,7 @@ The class is designed to (mostly) reproduce the original Python client provided 
 """
 
 import signal
+import threading
 import socket
 import struct
 from enum import IntEnum, auto
@@ -61,7 +62,9 @@ class TMInterface:
 
     def register(self, timeout=None):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        signal.signal(signal.SIGINT, self.signal_handler)
+        # signal.signal only works in the main thread; train_sac_vec registers from worker threads.
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGINT, self.signal_handler)
         # https://stackoverflow.com/questions/45864828/msg-waitall-combined-with-so-rcvtimeo
         # https://stackoverflow.com/questions/2719017/how-to-set-timeout-on-pythons-socket-recv-method
         if timeout is not None:
