@@ -33,6 +33,7 @@ Then pick whatever matches what you want to do. They don't need to be read in or
 | Look up a setting | [8. Settings reference](08-settings-reference.md) |
 | Fix something that isn't working | [9. Troubleshooting](09-troubleshooting.md) |
 | Change or extend the framework itself | [10. How the framework works](10-how-the-framework-works.md) |
+| Enter the competition with my driver | [11. Entering the competition](11-competition.md) |
 | Look up a word | [Glossary](glossary.md) |
 
 ## Some possible paths
