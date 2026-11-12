@@ -12,6 +12,8 @@ Trained checkpoints land in agent/tmp/sac/ — my_agent.py loads the actor
 checkpoint from there for inference. agent/tmp/ is bind-mounted in
 docker-compose.yml, so both that and the best-run recording below survive a
 container rebuild.
+
+Every session is also recorded as a run under results/ (see experiments/).
 """
 
 import os
@@ -21,8 +23,10 @@ from pathlib import Path
 import numpy as np
 
 import best_run
+import env as tmnf_env
 import track_features
 from env import MAX_EPISODE_MS, TMNFEnv
+from experiments import RecordingEnv, Run
 from sac.agent import SACAgent
 from tm_launch import start_tmnf
 
@@ -50,6 +54,15 @@ def main():
     print(f"TMNF_DIR: {os.environ.get('TMNF_DIR', 'NOT SET')}")
     print(f"DISPLAY: {os.environ.get('DISPLAY', 'NOT SET')}")
 
+    env_config = tmnf_env.describe(MAP_FILE)
+    run = Run.create(
+        "train",
+        {"trainer": "train_sac", "policy": "sac-eval-only" if EVAL_ONLY else "sac-train", "n_games": N_GAMES,
+         "load_checkpoint": LOAD_CHECKPOINT, "eval_only": EVAL_ONLY, "avg_window": AVG_WINDOW, "env": env_config},
+        map_name=track_features.MAP_NAME, map_file=MAP_FILE, tracks_dir=track_features.TRACKS_DIR,
+        loaded_checkpoint=CHKPT_DIR if LOAD_CHECKPOINT else None,
+    )
+
     start_tmnf(log_name="tmloader-train.log")
 
     # We do NOT use a raw TCP port check here — the plugin's Render() detects
@@ -58,7 +71,8 @@ def main():
     print("Waiting 20s for game and TMInterface to start...")
     time.sleep(20)
 
-    env = TMNFEnv(port=PORT, map_file=MAP_FILE)
+    env = RecordingEnv(TMNFEnv(port=PORT, map_file=MAP_FILE), run,
+                       policy=run.manifest["config"]["policy"], env_config=env_config)
     print(f"Game speed: {env.game_speed}x, episode cutoff: {MAX_EPISODE_MS / 1000:.0f}s of race time")
     agent = SACAgent(
         input_dims=[track_features.STATE_DIM],
@@ -78,6 +92,7 @@ def main():
     best_run_score = best_run.load_score(BEST_RUN_SCORE_FILE, "score")
     print(f"Resuming best avg_score={best_score}, best single-run score={best_run_score}")
     score_history = []
+    status = "completed"
 
     try:
         for i in range(N_GAMES):
@@ -113,8 +128,15 @@ def main():
             print(f"episode {i} score {score:.1f} avg_score {avg_score:.1f} done_reason={info.get('done_reason')}")
     except KeyboardInterrupt:
         print("\nShutdown requested")
+        status = "interrupted"
+    except Exception:
+        status = "crashed"
+        raise
     finally:
         env.close()
+        if not EVAL_ONLY:
+            run.archive_checkpoint(CHKPT_DIR, "best")
+        run.finalize(status)
         print("Trainer shutting down gracefully")
 
 

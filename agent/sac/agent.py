@@ -114,8 +114,10 @@ class SACAgent:
             torch.save(network.state_dict(), os.path.join(checkpoint_dir, network.name + "_sac"))
 
     def learn(self):
+        """One gradient update. Returns its training stats (see the end), or
+        None if the buffer doesn't hold a batch yet."""
         if self.memory.mem_cntr < self.batch_size:
-            return
+            return None
 
         state, action, reward, new_state, done = self.memory.sample_buffer(self.batch_size)
 
@@ -169,3 +171,14 @@ class SACAgent:
         self.critic_2.optimizer.step()
 
         self.update_network_parameters()
+
+        # Detached tensors, not floats: .item() would sync with the GPU on
+        # every update. Callers that log them sum and convert in batches.
+        return {
+            "value_loss": value_loss.detach(),
+            "actor_loss": actor_loss.detach(),
+            "critic_loss": critic_loss.detach(),
+            "entropy": -log_probs.detach().mean(),
+            "q_mean": critic_value.detach().mean(),
+            "batch_reward_mean": reward.mean(),
+        }

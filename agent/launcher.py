@@ -7,6 +7,10 @@ is read once at startup from a single file inside the prefix
 (Documents/TMInterface/builtin.txt), and Wine scopes named objects (mutexes,
 pipes) to the wineserver instance tied to a WINEPREFIX. Sharing one prefix
 across instances would collide on both the port and any single-instance lock.
+
+The launcher owns the run all instances record into (see experiments/): it
+creates it before starting them, each agent.py joins it through TM_RUN_DIR,
+and the launcher writes the run's summary once they've all exited.
 """
 
 import os
@@ -16,6 +20,9 @@ import sys
 import time
 from pathlib import Path
 
+import env as tmnf_env
+import track_features
+from experiments import Run
 from instance_launch import clone_prefix, instance_tmnf_dir, patch_port, render_env, start_display
 
 MASTER_PREFIX = Path(os.environ["WINEPREFIX"])
@@ -26,6 +33,8 @@ AGENT_DIR = Path(__file__).parent
 NUM_INSTANCES = int(os.environ.get("TM_NUM_INSTANCES", "1"))
 BASE_PORT = int(os.environ.get("TM_BASE_PORT", "8775"))
 GAME_SPEED = os.environ.get("TM_GAME_SPEED", "5.0")
+AGENT_SPEC = os.environ.get("TM_AGENT", "agent:my_agent.py")
+MAP_FILE = os.environ.get("TM_MAP_FILE", f"{track_features.MAP_NAME}.Challenge.Gbx")
 
 BOOT_STAGGER_S = 5
 
@@ -44,6 +53,13 @@ def build_env(instance_dir: Path, port: int, index: int) -> dict:
 
 def main():
     children = []
+    # Created before any child starts: they inherit TM_RUN_DIR and join it.
+    run = Run.create(
+        "drive",
+        {"policy": AGENT_SPEC, "policy_spec": AGENT_SPEC, "instances": NUM_INSTANCES,
+         "env": tmnf_env.describe(MAP_FILE, float(GAME_SPEED))},
+        map_name=track_features.MAP_NAME, map_file=MAP_FILE, tracks_dir=track_features.TRACKS_DIR,
+    )
 
     def shutdown(signum, _frame):
         print(f"[launcher] Received signal {signum}, shutting down {len(children)} instance(s)...")
@@ -52,6 +68,7 @@ def main():
                 proc.send_signal(signum)
         for proc in children:
             proc.wait()
+        run.finalize("interrupted")
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, shutdown)
@@ -90,6 +107,7 @@ def main():
         if ret != 0:
             exit_code = ret
 
+    run.finalize("completed" if exit_code == 0 else "crashed")
     sys.exit(exit_code)
 
 

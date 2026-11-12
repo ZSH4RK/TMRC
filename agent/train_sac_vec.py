@@ -24,7 +24,12 @@ Stopping and resuming: agent/tmp/sac_latest/ always holds a recent snapshot
 (see SNAPSHOT_INTERVAL_S), also written on shutdown. TM_LOAD_CHECKPOINT=true
 resumes training from the best checkpoint, =latest from that snapshot. The
 replay buffer isn't saved, so a resumed run starts by refilling it.
-TM_EVAL_ONLY=true drives the loaded policy without learning or saving models.
+TM_EVAL_ONLY=true drives the loaded policy without learning or saving models
+(for a proper, deterministic evaluation use evaluate.py instead).
+
+Every session is recorded as a run under results/ (see experiments/): the
+manifest, one row per episode, replays of improving episodes, perf and learner
+metrics, and copies of the checkpoints it ended with.
 """
 
 import json
@@ -39,14 +44,14 @@ import numpy as np
 import torch
 
 import best_run
+import env as tmnf_env
 import track_features
 from env import MAX_EPISODE_MS, TMNFEnv
-from instance_launch import clone_prefix, hide_console, instance_tmnf_dir, patch_port, render_env, start_display
+from experiments import RecordingEnv, Run
+from instance_launch import hide_console, launch_games
 from sac.background import LearnerProcess, SharedPolicy, get_context
 from sac.buffers import SharedReplayBuffer
-from tm_launch import start_tmnf
 
-MASTER_PREFIX = Path(os.environ["WINEPREFIX"])
 INSTANCES_DIR = Path("/home/wineuser/.wine-instances-train")
 
 NUM_INSTANCES = int(os.environ.get("TM_NUM_INSTANCES", "4"))
@@ -80,27 +85,11 @@ AVG_WINDOW = 100
 THREAD_JOIN_TIMEOUT_S = 10
 
 
-def launch_instance(index: int) -> int:
-    """Clone this instance's Wine prefix, patch its port, launch TMLoader in it. Returns the port."""
-    port = BASE_PORT + index
-    instance_dir = INSTANCES_DIR / str(index)
-    clone_prefix(MASTER_PREFIX, instance_dir)
-    patch_port(instance_dir, port)
-
-    start_tmnf(
-        tmnf_dir=instance_tmnf_dir(instance_dir),
-        wineprefix=instance_dir,
-        log_name=f"tmloader-train-{index}.log",
-        display=start_display(index),
-        extra_env=render_env(index),
-    )
-    return port
-
-
 class Trainer:
     """State shared by the per-game threads. Episode bookkeeping runs under self.lock."""
 
-    def __init__(self, policy: SharedPolicy, memory: SharedReplayBuffer, learner):
+    def __init__(self, policy: SharedPolicy, memory: SharedReplayBuffer, learner, run: Run):
+        self.run = run
         self.policy = policy
         self.memory = memory
         self.learner = learner
@@ -125,7 +114,7 @@ class Trainer:
         self.best_distance_m = pb.get("distance_m", 0.0)
         print(f"[PB] Resuming PB time={self.best_time_ms}ms, furthest distance={self.best_distance_m:.1f}m")
 
-    def run_instance(self, index: int, env: TMNFEnv):
+    def run_instance(self, index: int, env: RecordingEnv):
         """Drive one game until asked to stop. The body of each game thread."""
         try:
             obs = env.reset()
@@ -207,26 +196,32 @@ def main():
 
     print(f"=== TMRC SAC Vector Trainer Starting ({NUM_INSTANCES} instances) ===")
 
-    ports = []
-    for i in range(NUM_INSTANCES):
-        print(f"[train_sac_vec] Launching instance {i} (port {BASE_PORT + i})...")
-        ports.append(launch_instance(i))
-        if i < NUM_INSTANCES - 1:
-            time.sleep(BOOT_STAGGER_S)
+    load_dir = {"latest": SNAPSHOT_DIR, "true": CHKPT_DIR}.get(LOAD_CHECKPOINT)
+    env_config = tmnf_env.describe(MAP_FILE, GAME_SPEED)
+    policy_label = "sac-eval-only" if EVAL_ONLY else "sac-train"
+    run = Run.create(
+        "train",
+        {"trainer": "train_sac_vec", "policy": policy_label, "instances": NUM_INSTANCES, "n_steps": N_STEPS,
+         "load_checkpoint": LOAD_CHECKPOINT, "eval_only": EVAL_ONLY, "updates_per_step": UPDATES_PER_STEP,
+         "replay_size": REPLAY_SIZE, "avg_window": AVG_WINDOW, "torch_threads": TORCH_THREADS, "env": env_config},
+        map_name=track_features.MAP_NAME, map_file=MAP_FILE, tracks_dir=track_features.TRACKS_DIR,
+        loaded_checkpoint=load_dir,
+    )
 
     # Scales with N: launching instances is staggered, and this many Wine/GL
     # processes starting up concurrently is slower than the single-instance
     # 20s baseline (see agent.py/train_sac.py) at higher N.
-    wait_s = 20 + 5 * NUM_INSTANCES
-    print(f"Waiting {wait_s}s for {NUM_INSTANCES} games and TMInterface instances to start...")
-    time.sleep(wait_s)
+    ports = launch_games(NUM_INSTANCES, INSTANCES_DIR, BASE_PORT, "tmloader-train", stagger_s=BOOT_STAGGER_S)
 
-    envs = [TMNFEnv(port=p, map_file=MAP_FILE, game_speed=GAME_SPEED) for p in ports]
+    envs = [
+        RecordingEnv(TMNFEnv(port=p, map_file=MAP_FILE, game_speed=GAME_SPEED), run,
+                     instance=i, policy=policy_label, env_config=env_config)
+        for i, p in enumerate(ports)
+    ]
     print(f"Game speed: {GAME_SPEED}x, decision every {track_features.STEP_MS}ms, episode cutoff: {MAX_EPISODE_MS / 1000:.0f}s of race time")
 
     input_dims = [track_features.STATE_DIM]
     max_action = np.array([1.0, 1.0], dtype=np.float32)
-    load_dir = {"latest": SNAPSHOT_DIR, "true": CHKPT_DIR}.get(LOAD_CHECKPOINT)
 
     ctx = get_context()
     memory = SharedReplayBuffer(REPLAY_SIZE, input_dims, 2, ctx)
@@ -245,8 +240,12 @@ def main():
             "load_dir": load_dir,
             "updates_per_step": UPDATES_PER_STEP,
             "torch_threads": TORCH_THREADS,
+            # Distinct from the games' seed, so the learner's sampling isn't
+            # a copy of the policy's.
+            "seed": run.manifest["seed"] + 1000,
+            "metrics_dir": str(run.path / "metrics"),
         })
-    trainer = Trainer(policy, memory, learner)
+    trainer = Trainer(policy, memory, learner, run)
 
     threads = [
         threading.Thread(target=trainer.run_instance, args=(i, env), name=f"game-{i}", daemon=True)
@@ -257,6 +256,7 @@ def main():
 
     started = last_perf = last_snapshot = time.monotonic()
     last_steps = 0
+    status = "completed"
     try:
         while not trainer.stop.is_set() and trainer.steps < N_STEPS:
             time.sleep(1)
@@ -275,22 +275,40 @@ def main():
                     f"{(now - started) / 60:.0f}min",
                     flush=True,
                 )
+                run.log_metrics("perf", {
+                    "steps": trainer.steps, "steps_per_s": round(steps_per_s, 1),
+                    "realtime_per_game": round(game_speed, 3), "updates": updates,
+                    "updates_per_step": round(ratio, 3), "episodes": len(trainer.completed_scores),
+                })
                 last_perf, last_steps = now, trainer.steps
             if learner is not None and now - last_snapshot >= SNAPSHOT_INTERVAL_S:
                 learner.save_snapshot()
                 last_snapshot = now
     except KeyboardInterrupt:
         print("\nShutdown requested")
+        status = "interrupted"
+    except Exception:
+        status = "crashed"
+        raise
     finally:
         trainer.stop.set()
         for thread in threads:
             thread.join(timeout=THREAD_JOIN_TIMEOUT_S)
         if learner is not None:
             learner.stop()
+        # Keep the weights with the results: agent/tmp/ is overwritten by
+        # the next session, the run directory isn't.
+        if not EVAL_ONLY:
+            run.archive_checkpoint(CHKPT_DIR, "best")
+            run.archive_checkpoint(SNAPSHOT_DIR, "latest")
+        for error in trainer.errors:
+            print(f"[train_sac_vec] {error}")
+        if trainer.errors:
+            status = "crashed"
+        run.finalize(status, steps=trainer.steps, updates=0 if learner is None else learner.updates,
+                     errors=trainer.errors or None)
         print("Vector trainer shutting down gracefully")
 
-    for error in trainer.errors:
-        print(f"[train_sac_vec] {error}")
     if trainer.errors:
         raise SystemExit(1)
 

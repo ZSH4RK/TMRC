@@ -127,3 +127,48 @@ def patch_port(instance_dir: Path, port: int):
 def instance_tmnf_dir(instance_dir: Path) -> Path:
     """Where TmForever.exe/TMLoader.exe live inside a cloned prefix."""
     return instance_dir / "drive_c" / "Program_Files_x86" / "TmNationsForever"
+
+
+def launch_game(index: int, instances_dir: Path, base_port: int, log_prefix: str) -> int:
+    """Clone a Wine prefix for instance `index`, give it port base_port+index,
+    and start TMLoader in it on its own display. Returns the port.
+
+    Shared by every multi-instance entry point (train_sac_vec.py,
+    evaluate.py), so they all start games the same way.
+    """
+    from tm_launch import start_tmnf
+
+    master_prefix = Path(os.environ["WINEPREFIX"])
+    port = base_port + index
+    instance_dir = Path(instances_dir) / str(index)
+    clone_prefix(master_prefix, instance_dir)
+    patch_port(instance_dir, port)
+    start_tmnf(
+        tmnf_dir=instance_tmnf_dir(instance_dir),
+        wineprefix=instance_dir,
+        log_name=f"{log_prefix}-{index}.log",
+        display=start_display(index),
+        extra_env=render_env(index),
+    )
+    return port
+
+
+def launch_games(count: int, instances_dir: Path, base_port: int, log_prefix: str,
+                 stagger_s: float = 5, settle_s: float = None) -> list:
+    """Launch `count` games, staggered, then wait for them to come up.
+    Returns their ports.
+
+    There's no safe readiness probe: the plugin treats any TCP connect as a
+    client and waits on a handshake (see agent.py), so this waits a fixed
+    time that grows with the number of games starting together.
+    """
+    ports = []
+    for i in range(count):
+        print(f"[launch] Starting game {i} (port {base_port + i})...", flush=True)
+        ports.append(launch_game(i, instances_dir, base_port, log_prefix))
+        if i < count - 1:
+            time.sleep(stagger_s)
+    settle_s = 20 + 5 * count if settle_s is None else settle_s
+    print(f"[launch] Waiting {settle_s}s for {count} game(s) and TMInterface to start...", flush=True)
+    time.sleep(settle_s)
+    return ports

@@ -16,6 +16,7 @@ import os
 import socket
 import struct
 import sys
+import time
 
 import numpy as np
 
@@ -66,6 +67,28 @@ PLUGIN_TIMEOUT_MS = 60_000
 RECV_TIMEOUT_S = 120
 
 
+def describe(map_file=None, game_speed=DEFAULT_GAME_SPEED) -> dict:
+    """Every constant that shapes an episode, for run manifests and replay
+    files. Two results are only comparable if these match."""
+    return {
+        "map_name": track_features.MAP_NAME,
+        "map_file": map_file or f"{track_features.MAP_NAME}.Challenge.Gbx",
+        "game_speed": game_speed,
+        "step_ms": track_features.STEP_MS,
+        "ray_angles": list(track_features.RAY_ANGLES),
+        "state_dim": track_features.STATE_DIM,
+        "track_length_m": track_features.TRACK_LENGTH,
+        "steer_deadzone": track_features.STEER_DEADZONE,
+        "throttle_deadzone": track_features.THROTTLE_DEADZONE,
+        "max_episode_ms": MAX_EPISODE_MS,
+        "stuck_ms": STUCK_MS,
+        "min_progress_m": MIN_PROGRESS_M,
+        "reward_per_m_advanced": REWARD_PER_M_ADVANCED,
+        "reward_per_ms": REWARD_PER_MS,
+        "finish_bonus": FINISH_BONUS,
+    }
+
+
 class TMNFEnv:
     """Wraps a single TMInterface connection as a step()/reset() RL environment."""
 
@@ -88,6 +111,16 @@ class TMNFEnv:
         self._stuck_ref_m = 0.0
         self._finish_time_ms = None
         self._map_loaded = False
+
+        # The raw state behind the latest observation, for agents that decide
+        # from game state rather than the observation vector (my_agent.decide,
+        # competition entries) and for recording.
+        self.last_game_state = None
+        self.last_wall_distances = None
+        self.last_race_time = None
+        # Wall-clock time the latest observation was handed back, to measure
+        # how long the agent took to decide.
+        self._returned_at = None
 
     def connect(self):
         """Open the TCP connection to TMInterface. Call once before the first reset()."""
@@ -147,15 +180,28 @@ class TMNFEnv:
         self._distance_m = 0.0
         self._stuck_ref_m = 0.0
         self._finish_time_ms = None
+        self.last_race_time = race_time
 
-        return self._build_obs(game_state)
+        obs = self._build_obs(game_state)
+        self._returned_at = time.perf_counter()
+        return obs
 
     def step(self, action):
-        inputs = track_features.action_to_inputs(action)
+        """Step with a continuous (steer, throttle) action, as SAC produces."""
+        return self.step_inputs(track_features.action_to_inputs(action))
+
+    def step_inputs(self, inputs):
+        """Step with boolean driver inputs: {left, right, accelerate, brake}.
+        Any agent can drive through this, whatever its action space."""
+        called_at = time.perf_counter()
+        agent_ms = None if self._returned_at is None else (called_at - self._returned_at) * 1000
+        input_time_ms = self._prev_race_time
+
         self.tm.set_input_state(**inputs)
         self.tm.sock.sendall(struct.pack("i", MessageType.SC_RUN_STEP_SYNC))
 
         game_state, race_time = self._wait_for_step()
+        game_ms = (time.perf_counter() - called_at) * 1000
         obs = self._build_obs(game_state)
 
         progress = track_features.progress_along_track(*self._xz(game_state))
@@ -179,6 +225,19 @@ class TMNFEnv:
             "distance_m": self._distance_m,
             "track_pct": 100.0 * self._distance_m / track_features.TRACK_LENGTH,
             "race_time_ms": race_time,
+            # For recording/replay: what was sent, when, and where it led.
+            "inputs": dict(inputs),
+            "input_time_ms": input_time_ms,
+            "position": game_state["position"],
+            "velocity": game_state["velocity"],
+            "direction": game_state["direction"],
+            # Health: the plugin blocks the game until we answer, so race time
+            # should advance exactly STEP_MS per step. Anything else means a
+            # step was missed (e.g. a plugin timeout) and the run isn't the
+            # experiment that was configured.
+            "step_gap": dt_ms != track_features.STEP_MS,
+            "agent_ms": agent_ms,
+            "game_ms": game_ms,
         }
 
         if self._finish_time_ms is not None:
@@ -193,6 +252,8 @@ class TMNFEnv:
             done = True
             info["done_reason"] = "stuck"
 
+        self.last_race_time = race_time
+        self._returned_at = time.perf_counter()
         return obs, reward, done, info
 
     def close(self):
@@ -243,6 +304,8 @@ class TMNFEnv:
         px, py, pz = game_state["position"]
         dx, dy, dz = game_state["direction"]
         wall_distances = self.track.cast_rays(Vec3(px, py, pz), Vec3(dx, dy, dz), track_features.RAY_ANGLES)
+        self.last_game_state = game_state
+        self.last_wall_distances = wall_distances
         return np.array(track_features.build_state(game_state, wall_distances), dtype=np.float32)
 
     @staticmethod

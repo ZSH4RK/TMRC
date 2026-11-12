@@ -13,9 +13,12 @@ ratio drops rather than the games slowing down; `updates` lets the trainer
 report the ratio it actually achieved.
 """
 
+import csv
 import queue
 import signal
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -30,6 +33,8 @@ from .networks import ActorNetwork
 # drive a recent policy, without moving weights off the GPU on every update.
 PUBLISH_EVERY_UPDATES = 20
 READY_TIMEOUT_S = 120
+# Updates averaged into each row of the run's metrics/learner.csv.
+LOG_EVERY_UPDATES = 1000
 STOP_TIMEOUT_S = 15
 
 
@@ -101,12 +106,53 @@ def _publish(actor, shared_state, policy_lock):
             shared_state[name].copy_(value)
 
 
+class _LearnerLog:
+    """Averages learn()'s stats over LOG_EVERY_UPDATES updates and appends
+    them to metrics/learner.csv in the run directory (config["metrics_dir"])."""
+
+    def __init__(self, metrics_dir):
+        self.path = Path(metrics_dir) / "learner.csv" if metrics_dir else None
+        self.sums, self.count, self.started = {}, 0, time.monotonic()
+        self.writer = self.file = None
+
+    def add(self, stats, updates, transitions):
+        if self.path is None or stats is None:
+            return
+        for key, value in stats.items():
+            self.sums[key] = self.sums[key] + value if key in self.sums else value
+        self.count += 1
+        if self.count < LOG_EVERY_UPDATES:
+            return
+        row = {"wall_time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+               "elapsed_s": round(time.monotonic() - self.started, 1),
+               "updates": updates, "transitions": transitions,
+               **{k: round(float(v) / self.count, 6) for k, v in self.sums.items()}}
+        if self.writer is None:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            new_file = not self.path.exists()
+            self.file = open(self.path, "a", newline="")
+            self.writer = csv.DictWriter(self.file, fieldnames=list(row))
+            if new_file:
+                self.writer.writeheader()
+        self.writer.writerow(row)
+        self.file.flush()
+        self.sums, self.count = {}, 0
+
+    def close(self):
+        if self.file is not None:
+            self.file.close()
+
+
 def _learner_main(memory, shared_state, policy_lock, updates, commands, ready, config):
     # Ctrl-C reaches every process in the group. Keep going until the trainer
     # says to stop, so the final snapshot still gets saved.
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     torch.set_num_threads(config["torch_threads"])
+    if config.get("seed") is not None:
+        torch.manual_seed(config["seed"])
+        np.random.seed(config["seed"] % 2**32)
+    log = _LearnerLog(config.get("metrics_dir"))
 
     agent = SACAgent(
         input_dims=config["input_dims"],
@@ -133,6 +179,7 @@ def _learner_main(memory, shared_state, policy_lock, updates, commands, ready, c
             agent.save_snapshot(config["snapshot_dir"])
         elif command == "stop":
             agent.save_snapshot(config["snapshot_dir"])
+            log.close()
             return
 
         count = memory.mem_cntr
@@ -140,7 +187,8 @@ def _learner_main(memory, shared_state, policy_lock, updates, commands, ready, c
             time.sleep(0.001)
             continue
 
-        agent.learn()
+        stats = agent.learn()
         updates.value += 1
+        log.add(stats, updates.value, count)
         if updates.value % PUBLISH_EVERY_UPDATES == 0:
             _publish(agent.actor, shared_state, policy_lock)

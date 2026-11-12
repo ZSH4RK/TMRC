@@ -9,3 +9,8 @@ agent/tmp/*
 
 # Local notes
 Plan.md
+
+# Recorded runs (see agent/experiments/) — bind-mounted from the host in
+# docker-compose.yml. Large and machine-specific; keep or share them on purpose.
+results/*
+!results/.gitkeep
