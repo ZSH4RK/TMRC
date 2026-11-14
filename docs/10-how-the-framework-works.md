@@ -108,7 +108,10 @@ For that, run an eval and verify one of its replays.
 
 - Replays are not native TrackMania `.Replay.Gbx` files. That format isn't documented.
   The `.inputs.txt` scripts haven't yet been checked in-game for exact timing.
-- Only A03-Race has track data, and `track_features` loads one map per process.
+- Track data exists for A01, A02 and A03-Race, but `track_features` loads one map
+  per process (`TM_MAP_NAME`), so a run trains or evaluates on one map. A01 and A02
+  were traced by `agent/trace_walls.py`; where a section has no wall (a jump, a
+  bridge without barriers) the interpolated wall is a straight line across the gap.
 - Multi-instance training isn't bit-for-bit repeatable (thread timing).
 - Inside the container git isn't available, so code is identified by hash. The
   commit is only recorded if passed at build time (`TMRC_GIT_COMMIT`).

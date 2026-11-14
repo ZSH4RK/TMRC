@@ -115,8 +115,9 @@ These are just suggestions. Ignore them if you have your own plan.
   recorded in `agent_ms_mean` / `agent_ms_max` (see [page 6](06-results-and-replays.md)).
 - **Errors stop the run.** If `decide` crashes, the error is printed and the run
   is marked `crashed`.
-- **Only the A03-Race map has wall data at the moment.** Other maps need their
-  own folder in `Tracks/` (the scripts there generate it).
+- **Wall data exists for A01-Race, A02-Race and A03-Race**, the competition maps.
+  Pick one with `TM_MAP_NAME` (default `A03-Race`). Other maps need their own
+  folder in `Tracks/`: its README explains how to make one.
 
 ## Where to go next
 

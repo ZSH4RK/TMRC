@@ -11,11 +11,12 @@ Nice To Have 6- <br>
 
 - [X] TMNF running with TMInterface loading onto a specific map (A01) from Commandline
 - [X] Get a basic model that just drives forward running from Command Line
-- [ ] Use Docker to package the model and allow participants to use their own models
-- [ ] Logging mechanism for results eg. Distance Covered or Racetime, Timestamp, inputs performed (In the form of a TMNF Replay file)
-- [ ] Allow results to be sent back to host Computer and saved
-- [ ] Live Leaderboard on each track
-- [ ] Parallelize running TMNF while allowing the model to learn from all instances at once
+- [X] Use Docker to package the model and allow participants to use their own models (`TM_MODE=eval TM_EVAL_AGENT=agent:<file>`, and [submission repos](docs/11-competition.md))
+- [X] Logging mechanism for results eg. Distance Covered or Racetime, Timestamp, inputs performed (`results/<run>/`: episodes, replays + TMInterface input scripts; see below)
+- [X] Allow results to be sent back to host Computer and saved (bind-mounted `results/`)
+- [X] Live Leaderboard on each track (competition-admin's evaluation workflow rebuilds it on every submission)
+- [X] Parallelize running TMNF while allowing the model to learn from all instances at once (`TM_NUM_INSTANCES`, `train_sac_vec.py`)
+- [X] Track data (walls + centre line) for all three competition maps: A01, A02, A03 (`agent/trace_walls.py`)
 
 ### Results, replays and testing
 **New here? Start with [docs/README.md](docs/README.md)**: step-by-step guides for writing agents, training, and reading results.
