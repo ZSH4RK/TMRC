@@ -32,7 +32,6 @@ manifest, one row per episode, replays of improving episodes, perf and learner
 metrics, and copies of the checkpoints it ended with.
 """
 
-import json
 import os
 import signal
 import threading
@@ -48,6 +47,7 @@ import env as tmnf_env
 import track_features
 from env import MAX_EPISODE_MS, TMNFEnv
 from experiments import RecordingEnv, Run
+from experiments.personal_best import PersonalBest
 from game.instance_launch import hide_console, launch_games
 from sac.background import LearnerProcess, SharedPolicy, get_context
 from sac import settings as sac_settings
@@ -73,7 +73,6 @@ SNAPSHOT_DIR = str(TMP_DIR / "sac_latest")
 # past the other's best score/run, since both are bind-mounted in
 # docker-compose.yml and survive a rebuild.
 BEST_AVG_SCORE_FILE = TMP_DIR / "sac" / "best_avg_score.json"
-PB_FILE = TMP_DIR / "pb.json"
 BEST_RUN_NPZ = TMP_DIR / "best_run.npz"
 BEST_RUN_SCORE_FILE = TMP_DIR / "best_run_score.json"
 
@@ -109,12 +108,13 @@ class Trainer:
         self.best_run_score = best_run.load_score(BEST_RUN_SCORE_FILE, "score", self.reward)
         print(f"Resuming best avg_score={self.best_score}, best single-run score={self.best_run_score}")
 
-        # Personal bests: fastest finish (ms) and furthest distance (m) along the
-        # track, persisted so a restart doesn't re-announce old records.
-        pb = json.loads(PB_FILE.read_text()) if PB_FILE.exists() else {}
-        self.best_time_ms = pb.get("time_ms") or float("inf")
-        self.best_distance_m = pb.get("distance_m", 0.0)
-        print(f"[PB] Resuming PB time={self.best_time_ms}ms, furthest distance={self.best_distance_m:.1f}m")
+        # Personal bests for this map: fastest finish and furthest distance,
+        # kept in results/pb.json so a restart doesn't re-announce old records.
+        self.pb = PersonalBest(run.path.parent, track_features.MAP_NAME,
+                               run.manifest.get("game", {}).get("track_csv_sha256"))
+        self.pb_lock = threading.Lock()
+        print(f"[PB] {track_features.MAP_NAME}: best time={self.pb.time_ms}ms, "
+              f"furthest distance={self.pb.distance_m:.1f}m ({self.pb.path})")
 
     def run_instance(self, index: int, env: RecordingEnv):
         """Drive one game until asked to stop. The body of each game thread."""
@@ -163,21 +163,15 @@ class Trainer:
             best_run.save_best_run(BEST_RUN_NPZ, BEST_RUN_SCORE_FILE, states, actions, rewards, score, info,
                                    reward=self.reward)
 
-        pb_changed = False
         dist = info.get("distance_m", 0.0)
-        if info.get("done_reason") == "finished":
-            t = info["race_time_ms"]
-            if t < self.best_time_ms:
-                prev = "none" if self.best_time_ms == float("inf") else f"{self.best_time_ms / 1000:.2f}s"
-                print(f"[PB] NEW PB: {t / 1000:.2f}s (prev {prev}) instance {index}, episode {episode}", flush=True)
-                self.best_time_ms, pb_changed = t, True
-        elif dist > self.best_distance_m:
-            print(f"[PB] NEW FURTHEST: {dist:.0f}m = {info['track_pct']:.1f}% of track (prev {self.best_distance_m:.0f}m) instance {index}, episode {episode}", flush=True)
-            pb_changed = True
-        self.best_distance_m = max(self.best_distance_m, dist)
-        if pb_changed:
-            PB_FILE.parent.mkdir(parents=True, exist_ok=True)
-            PB_FILE.write_text(json.dumps({"time_ms": None if self.best_time_ms == float("inf") else self.best_time_ms, "distance_m": self.best_distance_m}))
+        finished = info.get("done_reason") == "finished"
+        with self.pb_lock:
+            change = self.pb.update(self.run.path.name, episode, finished, info.get("race_time_ms"), dist)
+        if change and change[0] == "time":
+            prev = "none" if change[1] == float("inf") else f"{change[1] / 1000:.2f}s"
+            print(f"[PB] NEW PB: {info['race_time_ms'] / 1000:.2f}s (prev {prev}) instance {index}, episode {episode}", flush=True)
+        elif change:
+            print(f"[PB] NEW FURTHEST: {dist:.0f}m = {info['track_pct']:.1f}% of track (prev {change[1]:.0f}m) instance {index}, episode {episode}", flush=True)
 
         print(
             f"[instance {index}] episode {episode} score {score:.1f} "
