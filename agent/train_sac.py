@@ -27,6 +27,7 @@ import env as tmnf_env
 import track_features
 from env import MAX_EPISODE_MS, TMNFEnv
 from experiments import RecordingEnv, Run
+from sac import settings as sac_settings
 from sac.agent import SACAgent
 from game.tm_launch import start_tmnf
 
@@ -69,7 +70,8 @@ def main():
     run = Run.create(
         "train",
         {"trainer": "train_sac", "policy": "sac-eval-only" if EVAL_ONLY else "sac-train", "n_games": N_GAMES,
-         "load_checkpoint": LOAD_CHECKPOINT, "eval_only": EVAL_ONLY, "avg_window": AVG_WINDOW, "env": env_config},
+         "load_checkpoint": LOAD_CHECKPOINT, "eval_only": EVAL_ONLY, "avg_window": AVG_WINDOW,
+         "sac": sac_settings.describe(2), "env": env_config},
         map_name=track_features.MAP_NAME, map_file=MAP_FILE, tracks_dir=track_features.TRACKS_DIR,
         loaded_checkpoint=CHKPT_DIR if LOAD_CHECKPOINT else None,
     )
@@ -91,6 +93,8 @@ def main():
         n_actions=2,
         max_action=np.array([1.0, 1.0], dtype=np.float32),
         chkpt_dir=CHKPT_DIR,
+        max_size=sac_settings.REPLAY_SIZE,
+        **sac_settings.agent_kwargs(2),
     )
 
     if LOAD_CHECKPOINT:

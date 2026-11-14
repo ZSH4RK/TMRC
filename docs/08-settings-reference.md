@@ -69,6 +69,12 @@ Used by `TM_EVAL_AGENT` and `TM_AGENT`:
 | `TM_EVAL_ONLY` | `false` | drive the loaded network inside the trainer without learning (`eval` mode is the cleaner way to test) |
 | `TM_TORCH_THREADS` | `2` | CPU threads for the learner |
 | `TM_WALL_PENALTY` | `1.0` | reward taken off for each step that ends touching a wall; `0` turns it off. Changing it changes every score, so the next training run copies the saved best network into its results folder (`checkpoints/previous-best/`) and starts its best score afresh |
+| `TM_REPLAY_SIZE` | `1000000` | steps of experience the learner keeps (about 1,500 A03 episodes with 6 instances). Too small and it forgets mistakes it stopped making, then makes them again. Uses about 125 MB per million |
+| `TM_LR` | `0.0003` | learning rate of all the networks |
+| `TM_LR_DECAY_UPDATES` | `0` | learning updates over which the learning rate falls in a straight line to `TM_LR` × `TM_LR_FINAL`, then stays there. `0` keeps it constant. Training past its best and getting worse is the sign to try it: e.g. set it to the `updates` count in `learner.csv` where scores peaked |
+| `TM_LR_FINAL` | `0.1` | where the decay ends, as a fraction of `TM_LR` |
+| `TM_AUTO_ENTROPY` | `true` | adjust how much the policy explores so its `entropy` tracks `TM_TARGET_ENTROPY`. `false` uses the original fixed amount |
+| `TM_TARGET_ENTROPY` | `-2` | the entropy aimed for; lower = less random. The usual choice is minus the number of actions |
 
 ## Constants in the code
 
@@ -78,7 +84,7 @@ Some things are constants in code, not settings. Change them in the file and reb
 |---|---|
 | Reward amounts, episode time limit, "stuck" rule | top of `agent/env.py` |
 | Ray angles, observation scaling, key deadzones | `agent/track_features.py` |
-| SAC network size, learning rates, batch size | `agent/sac/agent.py` |
+| SAC network size, batch size, discount, reward scale | `agent/sac/agent.py` |
 
 All of these are saved in each run's `manifest.json` under `config.env`, so
 runs with different values can be told apart.

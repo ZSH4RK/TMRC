@@ -72,13 +72,20 @@ How to tell whether learning is working, from the run's `metrics/learner.csv`:
 
 | Column | What to look for |
 |---|---|
-| `entropy` | how random the policy is. Usually falls slowly as it becomes more confident. |
+| `entropy` | how random the policy is. With `TM_AUTO_ENTROPY` on it is steered towards `TM_TARGET_ENTROPY` (-2). |
+| `temperature` | how strongly randomness is rewarded. Entropy tuning raises it when the policy is less random than the target and lowers it when more. |
+| `lr` | the current learning rate; falls over time if `TM_LR_DECAY_UPDATES` is set. |
 | `q_mean` | the network's estimate of future reward. Should rise as driving improves; values that explode suggest instability. |
 | `critic_loss`, `value_loss` | how wrong its estimates are. Noisy; look at the trend, not single values. |
 | `actor_loss` | not very meaningful on its own |
 
 And from `episodes.csv`, the thing that really matters: `track_pct` and
 `race_time_ms` going the right way over time.
+
+If scores peak and then slowly get worse, the best network is still safe: it's
+saved by its 100-episode average in `agent/tmp/sac/` and the run's
+`checkpoints/best/`. To stop the decline, try `TM_LR_DECAY_UPDATES` (see
+[page 8](08-settings-reference.md#sac-training)).
 
 RL often needs **hours** and many episodes before it gets good, and results vary
 between runs with different seeds (see [page 7](07-fair-experiments.md)).

@@ -160,6 +160,7 @@ def _learner_main(memory, shared_state, policy_lock, updates, commands, ready, c
         max_action=config["max_action"],
         chkpt_dir=config["chkpt_dir"],
         memory=memory,
+        **config.get("agent_kwargs", {}),
     )
     if config["load_dir"] is not None:
         agent.load_models(config["load_dir"])

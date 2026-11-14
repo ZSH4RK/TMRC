@@ -50,6 +50,7 @@ from env import MAX_EPISODE_MS, TMNFEnv
 from experiments import RecordingEnv, Run
 from game.instance_launch import hide_console, launch_games
 from sac.background import LearnerProcess, SharedPolicy, get_context
+from sac import settings as sac_settings
 from sac.buffers import SharedReplayBuffer
 
 INSTANCES_DIR = Path("/home/wineuser/.wine-instances-train")
@@ -64,7 +65,7 @@ EVAL_ONLY = os.environ.get("TM_EVAL_ONLY", "false").lower() == "true"
 UPDATES_PER_STEP = float(os.environ.get("TM_UPDATES_PER_STEP", "1.0"))
 # Small networks gain nothing from many threads, and the games need the cores.
 TORCH_THREADS = int(os.environ.get("TM_TORCH_THREADS", "2"))
-REPLAY_SIZE = 100_000
+REPLAY_SIZE = sac_settings.REPLAY_SIZE
 TMP_DIR = Path(__file__).parent / "tmp"
 CHKPT_DIR = str(TMP_DIR / "sac")
 SNAPSHOT_DIR = str(TMP_DIR / "sac_latest")
@@ -216,7 +217,7 @@ def main():
         "train",
         {"trainer": "train_sac_vec", "policy": policy_label, "instances": NUM_INSTANCES, "n_steps": N_STEPS,
          "load_checkpoint": LOAD_CHECKPOINT, "eval_only": EVAL_ONLY, "updates_per_step": UPDATES_PER_STEP,
-         "replay_size": REPLAY_SIZE, "avg_window": AVG_WINDOW, "torch_threads": TORCH_THREADS, "env": env_config},
+         "sac": sac_settings.describe(2), "avg_window": AVG_WINDOW, "torch_threads": TORCH_THREADS, "env": env_config},
         map_name=track_features.MAP_NAME, map_file=MAP_FILE, tracks_dir=track_features.TRACKS_DIR,
         loaded_checkpoint=load_dir,
     )
@@ -255,6 +256,7 @@ def main():
             "reward": tmnf_env.reward_config(),
             "load_dir": load_dir,
             "updates_per_step": UPDATES_PER_STEP,
+            "agent_kwargs": sac_settings.agent_kwargs(2),
             "torch_threads": TORCH_THREADS,
             # Distinct from the games' seed, so the learner's sampling isn't
             # a copy of the policy's.
