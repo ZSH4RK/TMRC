@@ -21,6 +21,8 @@ from typing import Optional
 
 import numpy as np
 
+from . import stats
+
 INPUT_KEYS = ("left", "right", "accelerate", "brake")
 # TMInterface's names for the same keys.
 TMI_KEYS = {"left": "left", "right": "right", "accelerate": "up", "brake": "down"}
@@ -168,6 +170,7 @@ class EpisodeRecorder:
             "score": float(np.sum(self._reward)) if self._reward else 0.0,
             "mean_speed_kmh": round(float(speeds.mean()), 2) if speeds.size else None,
             "max_speed_kmh": round(float(speeds.max()), 2) if speeds.size else None,
+            **stats.input_stats(self._inputs, (self._race_time[-1] - self.start_time_ms) if self._race_time else None),
             "step_gaps": self.step_gaps,
             "agent_ms_mean": round(float(np.mean(self._agent_ms)), 3) if self._agent_ms else None,
             "agent_ms_max": round(float(np.max(self._agent_ms)), 3) if self._agent_ms else None,

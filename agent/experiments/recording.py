@@ -8,6 +8,9 @@ rows and replay files without any recording code of its own.
 
 import time
 
+import track_features
+
+from . import stats
 from .run import Run
 
 
@@ -58,13 +61,22 @@ class RecordingEnv:
     def end_episode(self, info: dict) -> dict:
         """Log the current episode. Called automatically when the env reports
         done; call it yourself for an episode cut short some other way."""
+        finished = info.get("done_reason") == "finished"
+        final = info.get("position") or (None, None, None)
         row = {
             "instance": self.instance,
             "policy": self.policy,
             "done_reason": info.get("done_reason"),
             "race_time_ms": info.get("race_time_ms"),
+            **stats.medal(info.get("race_time_ms") if finished else None, track_features.MAP_TIMES),
             "distance_m": round(info["distance_m"], 3) if info.get("distance_m") is not None else None,
             "track_pct": round(info["track_pct"], 3) if info.get("track_pct") is not None else None,
+            # Race time at each checkpoint, the finish last, ";"-separated.
+            "checkpoint_times_ms": ";".join(str(t) for t in info.get("checkpoint_times_ms") or []),
+            # Where the episode ended: on the finish line, or where it got
+            # stuck or ran out of time before the restart.
+            **{f"final_{axis}": round(float(v), 2) if v is not None else None
+               for axis, v in zip("xyz", final)},
             "wall_s": round(time.monotonic() - self._episode_started, 2) if self._episode_started else None,
             **self.recorder.episode_stats(),
         }

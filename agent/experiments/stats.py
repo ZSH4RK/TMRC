@@ -14,16 +14,52 @@ from pathlib import Path
 # Column order of episodes*.csv. Rows may carry more keys; they're dropped.
 EPISODE_FIELDS = [
     "episode", "instance", "wall_time", "policy", "done_reason", "finished",
-    "race_time_ms", "distance_m", "track_pct", "score", "steps",
-    "mean_speed_kmh", "max_speed_kmh", "step_gaps", "agent_ms_mean", "agent_ms_max",
+    "race_time_ms", "medal", "gap_to_author_ms", "distance_m", "track_pct",
+    "checkpoint_times_ms", "final_x", "final_y", "final_z", "score", "steps",
+    "mean_speed_kmh", "max_speed_kmh", "accelerate_pct", "brake_pct", "steer_pct",
+    "steer_changes_per_s", "step_gaps", "agent_ms_mean", "agent_ms_max",
     "wall_s", "replay",
 ]
 
 _NUMERIC = {
-    "episode": int, "steps": int, "step_gaps": int, "race_time_ms": int,
+    "episode": int, "steps": int, "step_gaps": int, "race_time_ms": int, "gap_to_author_ms": int,
     "distance_m": float, "track_pct": float, "score": float, "mean_speed_kmh": float,
     "max_speed_kmh": float, "agent_ms_mean": float, "agent_ms_max": float, "wall_s": float,
+    "final_x": float, "final_y": float, "final_z": float, "accelerate_pct": float,
+    "brake_pct": float, "steer_pct": float, "steer_changes_per_s": float,
 }
+
+MEDALS = ("author", "gold", "silver", "bronze")
+
+
+def medal(race_time_ms, map_times) -> dict:
+    """The medal a finish earned and its gap to the author time, from the
+    map's times (Tracks/<map>/map.json). A finish equal to a medal time earns
+    it, as in the game. Without a finish or the map's times, both are None."""
+    if race_time_ms is None or not map_times:
+        return {"medal": None, "gap_to_author_ms": None}
+    earned = next((m for m in MEDALS if race_time_ms <= map_times[f"{m}_ms"]), "none")
+    return {"medal": earned, "gap_to_author_ms": int(race_time_ms - map_times["author_ms"])}
+
+
+def input_stats(inputs, race_ms) -> dict:
+    """How the car was driven: % of steps accelerating, braking and steering,
+    and how often the steering changed (left / straight / right) per second
+    of race time. A high change rate is a twitchy, wobbling driver.
+    inputs: one (left, right, accelerate, brake) row per step, over race_ms
+    of race time."""
+    rows = [tuple(bool(v) for v in row) for row in inputs]
+    if not rows:
+        return {"accelerate_pct": None, "brake_pct": None, "steer_pct": None, "steer_changes_per_s": None}
+    n = len(rows)
+    steer = [(1 if right else 0) - (1 if left else 0) for left, right, _, _ in rows]
+    changes = sum(1 for a, b in zip(steer, steer[1:]) if a != b)
+    return {
+        "accelerate_pct": round(100 * sum(r[2] for r in rows) / n, 1),
+        "brake_pct": round(100 * sum(r[3] for r in rows) / n, 1),
+        "steer_pct": round(100 * sum(1 for s in steer if s) / n, 1),
+        "steer_changes_per_s": round(1000 * changes / race_ms, 2) if race_ms and race_ms > 0 else None,
+    }
 
 
 def rank_key(row: dict) -> tuple:

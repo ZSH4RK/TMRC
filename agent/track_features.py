@@ -8,6 +8,7 @@ at train and inference time.
 """
 
 import csv
+import json
 import math
 import os
 from pathlib import Path
@@ -52,6 +53,12 @@ else:
 TRACKS_DIR = _TRACKS_DIR
 
 _TRACKS_CSV = _TRACKS_DIR / MAP_NAME / "points-offset.csv"
+
+# The map's medal times in ms ({bronze,silver,gold,author}_ms, from
+# Tracks/<map>/map.json), to report the medal a finish earned. None if the
+# map has no map.json.
+_MAP_JSON = _TRACKS_DIR / MAP_NAME / "map.json"
+MAP_TIMES = json.loads(_MAP_JSON.read_text()) if _MAP_JSON.exists() else None
 
 _mid_points = []
 with open(_TRACKS_CSV, newline="") as _f:

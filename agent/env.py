@@ -112,6 +112,8 @@ class TMNFEnv:
         self._distance_m = 0.0
         self._stuck_ref_m = 0.0
         self._finish_time_ms = None
+        # Race time of each checkpoint crossed this episode, the finish last.
+        self._cp_times = []
         self._map_loaded = False
 
         # The raw state behind the latest observation, for agents that decide
@@ -182,6 +184,7 @@ class TMNFEnv:
         self._distance_m = 0.0
         self._stuck_ref_m = 0.0
         self._finish_time_ms = None
+        self._cp_times = []
         self.last_race_time = race_time
 
         obs = self._build_obs(game_state)
@@ -236,8 +239,9 @@ class TMNFEnv:
             # Health: the plugin blocks the game until we answer, so race time
             # should advance exactly STEP_MS per step. Anything else means a
             # step was missed (e.g. a plugin timeout) and the run isn't the
-            # experiment that was configured.
-            "step_gap": dt_ms != track_features.STEP_MS,
+            # experiment that was configured. Except at the finish: the game
+            # reports that step at the finish time, mid-step (27980, not 28000).
+            "step_gap": dt_ms != track_features.STEP_MS and self._finish_time_ms is None,
             "agent_ms": agent_ms,
             "game_ms": game_ms,
         }
@@ -253,6 +257,10 @@ class TMNFEnv:
         elif self._steps_without_progress >= STUCK_STEPS:
             done = True
             info["done_reason"] = "stuck"
+        if done:
+            # Splits: where the time went. info["position"] is where the
+            # episode ended: at the finish, or where it got stuck or timed out.
+            info["checkpoint_times_ms"] = list(self._cp_times)
 
         self.last_race_time = race_time
         self._returned_at = time.perf_counter()
@@ -290,14 +298,23 @@ class TMNFEnv:
                 # or the next recv() misreads "current" as the next message-type
                 # header and desyncs the whole protocol stream.
                 current, target = struct.unpack("ii", sock.recv(8, socket.MSG_WAITALL))
-                if msg_type == MessageType.SC_CHECKPOINT_COUNT_CHANGED_SYNC and current == target and target > 0:
-                    # Crossed the finish. Must be called before acking this
-                    # message: if the game goes on to end the race it stops
-                    # stepping and ignores give_up(), so reset() would hang.
-                    self.tm.prevent_simulation_finish()
-                    # From the state, not the next step: that's up to a step
-                    # late. The checkpoint times aren't filled in yet at this point.
-                    self._finish_time_ms = self.tm.get_simulation_state().race_time
+                if msg_type == MessageType.SC_CHECKPOINT_COUNT_CHANGED_SYNC:
+                    finished = current == target and target > 0
+                    if finished:
+                        # Crossed the finish. Must be called before acking this
+                        # message: if the game goes on to end the race it stops
+                        # stepping and ignores give_up(), so reset() would hang.
+                        self.tm.prevent_simulation_finish()
+                    if finished or current == len(self._cp_times) + 1:
+                        # From the state, not the next step: that's up to a step
+                        # late. The game's own checkpoint times aren't filled in
+                        # yet at this point. (A restart's count going back to 0
+                        # isn't a checkpoint; reset() clears the list.)
+                        cp_time = self.tm.get_simulation_state().race_time
+                        if current == len(self._cp_times) + 1:
+                            self._cp_times.append(cp_time)
+                        if finished:
+                            self._finish_time_ms = cp_time
                 sock.sendall(struct.pack("i", msg_type))
             else:
                 sock.sendall(struct.pack("i", msg_type))
