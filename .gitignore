@@ -14,3 +14,6 @@ Plan.md
 # docker-compose.yml. Large and machine-specific; keep or share them on purpose.
 results/*
 !results/.gitkeep
+
+# Debug output
+*.log
