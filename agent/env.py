@@ -102,7 +102,9 @@ class TMNFEnv:
         self.map_file = map_file
         self.game_speed = game_speed
         self.tm = None
-        self.track = TrackInterpolator()
+        # The same map track_features loads (TM_MAP_NAME): the rays and the
+        # centre-line features must describe the map being driven.
+        self.track = TrackInterpolator(map_name=track_features.MAP_NAME)
 
         self._prev_progress = 0.0
         self._prev_race_time = 0
