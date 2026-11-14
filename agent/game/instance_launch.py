@@ -136,7 +136,7 @@ def launch_game(index: int, instances_dir: Path, base_port: int, log_prefix: str
     Shared by every multi-instance entry point (train_sac_vec.py,
     evaluate.py), so they all start games the same way.
     """
-    from tm_launch import start_tmnf
+    from .tm_launch import start_tmnf
 
     master_prefix = Path(os.environ["WINEPREFIX"])
     port = base_port + index

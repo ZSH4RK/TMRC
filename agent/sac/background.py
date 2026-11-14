@@ -24,7 +24,7 @@ import numpy as np
 import torch
 import torch.multiprocessing as mp
 
-import best_run
+from experiments import best_run
 
 from .agent import SACAgent
 from .networks import ActorNetwork

@@ -12,7 +12,7 @@ Aiming along the route keeps it heading for the finish: plain wall-following
 would circle any pocket in the track, such as A01's start area.
 
 Run it (one map per run, both walls; game speed doesn't change the physics):
-    TM_MODE=script TM_SCRIPT=agent/trace_walls.py TM_MAP_FILE=A01-Race.Challenge.Gbx \\
+    TM_MODE=script TM_SCRIPT=agent/tools/trace_walls.py TM_MAP_FILE=A01-Race.Challenge.Gbx \\
         TM_NUM_INSTANCES=1 docker compose up --build
 
 Needs results/traces/<map>-route.csv (x,y,z per row, start to finish), which
@@ -32,19 +32,21 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The agent/ folder: env, track_features and game/ live there.
+AGENT_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(AGENT_DIR))
 
-from instance_launch import hide_console, launch_games  # noqa: E402
-from tminterface2 import MessageType, TMInterface  # noqa: E402
+from game.instance_launch import hide_console, launch_games  # noqa: E402
+from game.tminterface2 import MessageType, TMInterface  # noqa: E402
 
 MAP_FILE = os.environ.get("TM_MAP_FILE", "A01-Race.Challenge.Gbx")
 MAP_NAME = MAP_FILE.removesuffix(".Challenge.Gbx")
 SIDES = os.environ.get("TM_TRACE_SIDES", "left,right").split(",")
 BASE_PORT = int(os.environ.get("TM_BASE_PORT", "8775"))
 GAME_SPEED = float(os.environ.get("TM_GAME_SPEED", "3.0"))
-OUT_DIR = Path(os.environ.get("TM_TRACE_DIR", Path(__file__).resolve().parent.parent / "results" / "traces"))
+OUT_DIR = Path(os.environ.get("TM_TRACE_DIR", AGENT_DIR.parent / "results" / "traces"))
 # Tracks/<map>/route.csv (route_from_replay.py), else results/traces/<map>-route.csv.
-_TRACKS_ROUTE = Path(__file__).resolve().parent.parent / "Tracks" / MAP_NAME / "route.csv"
+_TRACKS_ROUTE = AGENT_DIR.parent / "Tracks" / MAP_NAME / "route.csv"
 ROUTE_CSV = _TRACKS_ROUTE if _TRACKS_ROUTE.exists() else OUT_DIR / f"{MAP_NAME}-route.csv"
 
 STEP_MS = 10                 # finest control the physics allows

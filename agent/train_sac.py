@@ -22,13 +22,13 @@ from pathlib import Path
 
 import numpy as np
 
-import best_run
+from experiments import best_run
 import env as tmnf_env
 import track_features
 from env import MAX_EPISODE_MS, TMNFEnv
 from experiments import RecordingEnv, Run
 from sac.agent import SACAgent
-from tm_launch import start_tmnf
+from game.tm_launch import start_tmnf
 
 PORT = int(os.environ.get("TMI_PORT", 8775))
 # Defaults to track_features.MAP_NAME (TM_MAP_NAME) + ".Challenge.Gbx" so the
@@ -87,7 +87,7 @@ def main():
     # Loaded from disk rather than starting at -inf every run: otherwise a
     # resumed session's very first episode would "beat" an in-memory -inf
     # baseline and silently overwrite a genuinely better checkpoint/recording
-    # from a previous session (see best_run.py).
+    # from a previous session (see experiments/best_run.py).
     best_score = best_run.load_score(BEST_AVG_SCORE_FILE, "avg_score")
     best_run_score = best_run.load_score(BEST_RUN_SCORE_FILE, "score")
     print(f"Resuming best avg_score={best_score}, best single-run score={best_run_score}")

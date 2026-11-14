@@ -23,8 +23,8 @@ import track_features
 from env import TMNFEnv
 from experiments import RecordingEnv, Run, load_policy
 from experiments.policies import policy_provenance
-from instance_launch import hide_console
-from tm_launch import start_tmnf
+from game.instance_launch import hide_console
+from game.tm_launch import start_tmnf
 
 # TMI_PORT is set per-instance by launcher.py when TM_NUM_INSTANCES > 1
 # (instance i uses TM_BASE_PORT + i); must match this instance's `custom_port`.

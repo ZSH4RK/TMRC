@@ -23,7 +23,7 @@ from pathlib import Path
 import env as tmnf_env
 import track_features
 from experiments import Run
-from instance_launch import clone_prefix, instance_tmnf_dir, patch_port, render_env, start_display
+from game.instance_launch import clone_prefix, instance_tmnf_dir, patch_port, render_env, start_display
 
 MASTER_PREFIX = Path(os.environ["WINEPREFIX"])
 INSTANCES_DIR = Path("/home/wineuser/.wine-instances")

@@ -12,11 +12,9 @@ TMNF-Docker/
 ├── scripts/run-agent.sh        picks what to run from TM_MODE
 └── TMRC/
     ├── agent/
+    │   ├── my_agent.py         decide() agent that drives the trained SAC network
     │   ├── env.py              TMNFEnv: the game as reset()/step(); reward; episode rules
     │   ├── track_features.py   observation, action conversion, track progress
-    │   ├── tminterface2.py     low-level messages to/from the game plugin
-    │   ├── tm_launch.py        starts one game
-    │   ├── instance_launch.py  starts N games, each in its own Wine prefix, port and display
     │   │
     │   ├── agent.py            drive mode: one game, one decide() agent, forever
     │   ├── launcher.py         drive mode with N games (starts N agent.py processes)
@@ -24,12 +22,17 @@ TMNF-Docker/
     │   ├── verify_replay.py    verify mode
     │   ├── train_sac.py        SAC, one game
     │   ├── train_sac_vec.py    SAC, N games feeding one learner
-    │   ├── sac/                SAC networks, replay buffer, background learner process
-    │   ├── my_agent.py         decide() agent that drives the trained SAC network
     │   ├── compare_runs.py     leaderboard / diff of recorded runs
     │   │
+    │   ├── game/
+    │   │   ├── tminterface2.py     low-level messages to/from the game plugin
+    │   │   ├── tm_launch.py        starts one game
+    │   │   └── instance_launch.py  starts N games, each in its own Wine prefix, port and display
+    │   ├── sac/                SAC networks, replay buffer, background learner process
     │   ├── experiments/        the recording framework (below)
-    │   └── examples/           example agents and a learning script
+    │   ├── examples/           example agents and a learning script
+    │   ├── tools/              trace_walls.py: makes a map's wall data by driving along it
+    │   └── tmp/                trained checkpoints and best-run records (not in git)
     ├── tests/                  pytest tests for the framework (no game needed)
     ├── results/                recorded runs (shared with the host)
     └── docs/                   you are here
@@ -46,6 +49,7 @@ TMNF-Docker/
 | `stats.py` | episode CSV columns, race ranking, summaries |
 | `provenance.py` | hashes and copies of code, game files and checkpoints; environment and hardware info |
 | `seeding.py` | seeds Python, NumPy and PyTorch |
+| `best_run.py` | the trainers' "best so far" scores and best-episode record in `agent/tmp/`, kept across restarts |
 
 ### How a run is shared
 
@@ -84,7 +88,7 @@ and add the column name to `EPISODE_FIELDS` in `stats.py`.
 you have the run. It appears in `metrics/name.csv`.
 
 **A new mode:** write the script (follow `evaluate.py`: create a `Run`, launch
-games with `instance_launch.launch_games`, wrap envs in `RecordingEnv`, call
+games with `game.instance_launch.launch_games`, wrap envs in `RecordingEnv`, call
 `run.finalize`), then add a line to `scripts/run-agent.sh`. Or skip the
 mode and use `TM_MODE=script`.
 
@@ -110,7 +114,7 @@ For that, run an eval and verify one of its replays.
   The `.inputs.txt` scripts haven't yet been checked in-game for exact timing.
 - Track data exists for A01, A02 and A03-Race, but `track_features` loads one map
   per process (`TM_MAP_NAME`), so a run trains or evaluates on one map. A01 and A02
-  were traced by `agent/trace_walls.py`; where a section has no wall (a jump, a
+  were traced by `agent/tools/trace_walls.py`; where a section has no wall (a jump, a
   bridge without barriers) the interpolated wall is a straight line across the gap.
 - Multi-instance training isn't bit-for-bit repeatable (thread timing).
 - Inside the container git isn't available, so code is identified by hash. The

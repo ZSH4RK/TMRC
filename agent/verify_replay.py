@@ -24,7 +24,7 @@ from env import TMNFEnv
 from experiments import RecordingEnv, Replay, Run
 from experiments.provenance import PROJECT_DIR, sha256_file
 from experiments.replay import compare_trajectories
-from instance_launch import hide_console, launch_games
+from game.instance_launch import hide_console, launch_games
 
 TOLERANCE_M = float(os.environ.get("TM_VERIFY_TOL_M", "0.01"))
 BASE_PORT = int(os.environ.get("TM_BASE_PORT", "8775"))

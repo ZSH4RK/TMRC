@@ -17,3 +17,6 @@ results/*
 
 # Debug output
 *.log
+
+# IDE settings
+.idea/

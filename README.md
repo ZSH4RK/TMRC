@@ -16,7 +16,7 @@ Nice To Have 6- <br>
 - [X] Allow results to be sent back to host Computer and saved (bind-mounted `results/`)
 - [X] Live Leaderboard on each track (competition-admin's evaluation workflow rebuilds it on every submission)
 - [X] Parallelize running TMNF while allowing the model to learn from all instances at once (`TM_NUM_INSTANCES`, `train_sac_vec.py`)
-- [X] Track data (walls + centre line) for all three competition maps: A01, A02, A03 (`agent/trace_walls.py`)
+- [X] Track data (walls + centre line) for all three competition maps: A01, A02, A03 (`agent/tools/trace_walls.py`)
 
 ### Results, replays and testing
 **New here? Start with [docs/README.md](docs/README.md)**: step-by-step guides for writing agents, training, and reading results.

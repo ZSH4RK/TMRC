@@ -27,7 +27,7 @@ import track_features
 from env import TMNFEnv
 from experiments import RecordingEnv, Run, load_policy
 from experiments.policies import policy_provenance
-from instance_launch import hide_console, launch_games
+from game.instance_launch import hide_console, launch_games
 
 EVAL_AGENT = os.environ.get("TM_EVAL_AGENT", "sac:tmp/sac")
 EPISODES = int(os.environ.get("TM_EVAL_EPISODES", "5"))

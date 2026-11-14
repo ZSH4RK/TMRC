@@ -6,7 +6,7 @@ Each game runs on its own thread, so no game waits on another game or on a
 reset. Learning runs in its own process (see sac/background.py), so it doesn't
 hold up the games or compete with them for the GIL.
 
-Each instance gets its own cloned Wine prefix (see instance_launch.py)
+Each instance gets its own cloned Wine prefix (see game/instance_launch.py)
 because TMInterface's port is read once at startup from a file inside the
 prefix, and Wine scopes named objects to the wineserver tied to a given
 WINEPREFIX — this is the same cloning launcher.py does for N parallel
@@ -43,12 +43,12 @@ from pathlib import Path
 import numpy as np
 import torch
 
-import best_run
+from experiments import best_run
 import env as tmnf_env
 import track_features
 from env import MAX_EPISODE_MS, TMNFEnv
 from experiments import RecordingEnv, Run
-from instance_launch import hide_console, launch_games
+from game.instance_launch import hide_console, launch_games
 from sac.background import LearnerProcess, SharedPolicy, get_context
 from sac.buffers import SharedReplayBuffer
 
@@ -102,7 +102,7 @@ class Trainer:
         # Loaded from disk rather than starting at -inf every run: otherwise a
         # resumed session's very first episode would "beat" an in-memory -inf
         # baseline and silently overwrite a genuinely better checkpoint/recording
-        # from a previous session (see best_run.py).
+        # from a previous session (see experiments/best_run.py).
         self.best_score = best_run.load_score(BEST_AVG_SCORE_FILE, "avg_score")
         self.best_run_score = best_run.load_score(BEST_RUN_SCORE_FILE, "score")
         print(f"Resuming best avg_score={self.best_score}, best single-run score={self.best_run_score}")

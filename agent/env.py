@@ -21,7 +21,7 @@ import time
 import numpy as np
 
 import track_features
-from tminterface2 import MessageType, TMInterface
+from game.tminterface2 import MessageType, TMInterface
 
 sys.path.insert(0, str(track_features.TRACKS_DIR))
 from interpolate_track import TrackInterpolator, Vec3

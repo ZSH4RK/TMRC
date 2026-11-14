@@ -35,7 +35,7 @@ import track_features  # noqa: E402
 from env import TMNFEnv  # noqa: E402
 from examples.linear_agent import act  # noqa: E402  (the same policy maths linear_agent.py drives with)
 from experiments import RecordingEnv, Run  # noqa: E402
-from instance_launch import hide_console, launch_games  # noqa: E402
+from game.instance_launch import hide_console, launch_games  # noqa: E402
 
 ITERATIONS = int(os.environ.get("TM_ITERATIONS", "100"))
 NOISE = float(os.environ.get("TM_NOISE", "0.1"))   # how big each random change is
