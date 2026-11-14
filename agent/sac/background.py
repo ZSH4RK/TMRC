@@ -174,7 +174,7 @@ def _learner_main(memory, shared_state, policy_lock, updates, commands, ready, c
 
         if command == "save_best":
             agent.save_models()
-            best_run.save_score(config["best_score_file"], "avg_score", value)
+            best_run.save_score(config["best_score_file"], "avg_score", value, reward=config.get("reward"))
         elif command == "snapshot":
             agent.save_snapshot(config["snapshot_dir"])
         elif command == "stop":

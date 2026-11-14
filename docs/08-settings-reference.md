@@ -68,6 +68,7 @@ Used by `TM_EVAL_AGENT` and `TM_AGENT`:
 | `TM_UPDATES_PER_STEP` | `1.0` | learning updates per step of experience |
 | `TM_EVAL_ONLY` | `false` | drive the loaded network inside the trainer without learning (`eval` mode is the cleaner way to test) |
 | `TM_TORCH_THREADS` | `2` | CPU threads for the learner |
+| `TM_WALL_PENALTY` | `1.0` | reward taken off for each step that ends touching a wall; `0` turns it off. Changing it changes every score, so the next training run copies the saved best network into its results folder (`checkpoints/previous-best/`) and starts its best score afresh |
 
 ## Constants in the code
 

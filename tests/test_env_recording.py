@@ -73,3 +73,47 @@ def test_recorded_episode(results):
     assert replay.meta["env"]["step_ms"] == STEP
     assert replay.meta["policy"] == "test"
     assert read_episodes(run.path)[0]["done_reason"] == "timeout"
+
+
+def test_wall_penalty_and_hits(results):
+    """Steps ending against a wall lose WALL_PENALTY; the episode row counts
+    separate contacts and the share of steps on a wall."""
+    walls = {3, 4, 7}   # two separate contacts, three steps
+
+    def run_steps(wall_steps):
+        game = FakeGame()
+        env = make_env(game)
+        wait = game.wait
+
+        def wait_with_walls():
+            state = wait()
+            env._wall_contact = game.i in wall_steps   # what _wait_for_step reads from the game
+            return state
+        env._wait_for_step = wait_with_walls
+        run = Run.create("eval", root=results)
+        rec = RecordingEnv(env, run, policy="test", env_config=tmnf_env.describe())
+        rec.recorder.start(env.last_game_state["position"])
+        rec._episode_started = 0
+        steps = [rec.step_inputs({"left": False, "right": False, "accelerate": True, "brake": False}) for _ in range(10)]
+        row = rec.end_episode({"done_reason": "timeout", "race_time_ms": 10 * STEP, "distance_m": 1.0, "track_pct": 1.0})
+        return [s[1] for s in steps], [s[3]["wall_contact"] for s in steps], row
+
+    clean, _, _ = run_steps(set())
+    walled, contact, row = run_steps(walls)
+    assert contact == [i + 1 in walls for i in range(10)]
+    for i, (a, b) in enumerate(zip(clean, walled)):
+        assert b == pytest.approx(a - (tmnf_env.WALL_PENALTY if i + 1 in walls else 0))
+    assert row["wall_hits"] == 2 and row["wall_contact_pct"] == 30.0
+
+
+def test_best_score_tied_to_reward(tmp_path):
+    from experiments import best_run
+    path = tmp_path / "best_avg_score.json"
+    old = dict(best_run.LEGACY_REWARD)
+    new = {**old, "wall_penalty": 1.0}
+    path.write_text('{"avg_score": 1482.4}')        # saved before scores recorded their reward
+    assert best_run.reward_matches(path, old) and best_run.load_score(path, "avg_score", old) == 1482.4
+    assert not best_run.reward_matches(path, new) and best_run.load_score(path, "avg_score", new) == float("-inf")
+    best_run.save_score(path, "avg_score", 900.0, reward=new)
+    assert best_run.load_score(path, "avg_score", new) == 900.0
+    assert best_run.load_score(path, "avg_score", old) == float("-inf")

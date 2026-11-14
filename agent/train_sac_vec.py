@@ -103,8 +103,9 @@ class Trainer:
         # resumed session's very first episode would "beat" an in-memory -inf
         # baseline and silently overwrite a genuinely better checkpoint/recording
         # from a previous session (see experiments/best_run.py).
-        self.best_score = best_run.load_score(BEST_AVG_SCORE_FILE, "avg_score")
-        self.best_run_score = best_run.load_score(BEST_RUN_SCORE_FILE, "score")
+        self.reward = tmnf_env.reward_config()
+        self.best_score = best_run.load_score(BEST_AVG_SCORE_FILE, "avg_score", self.reward)
+        self.best_run_score = best_run.load_score(BEST_RUN_SCORE_FILE, "score", self.reward)
         print(f"Resuming best avg_score={self.best_score}, best single-run score={self.best_run_score}")
 
         # Personal bests: fastest finish (ms) and furthest distance (m) along the
@@ -158,7 +159,8 @@ class Trainer:
 
         if score > self.best_run_score:
             self.best_run_score = score
-            best_run.save_best_run(BEST_RUN_NPZ, BEST_RUN_SCORE_FILE, states, actions, rewards, score, info)
+            best_run.save_best_run(BEST_RUN_NPZ, BEST_RUN_SCORE_FILE, states, actions, rewards, score, info,
+                                   reward=self.reward)
 
         pb_changed = False
         dist = info.get("distance_m", 0.0)
@@ -188,6 +190,17 @@ def raise_keyboard_interrupt(_signum, _frame):
     raise KeyboardInterrupt
 
 
+def keep_previous_best(run):
+    """The saved best checkpoint's score was earned under a different reward
+    (e.g. TM_WALL_PENALTY changed), so it can't be compared with this run's:
+    the run starts its best score afresh and will overwrite agent/tmp/sac/ at
+    its first improvement. Copy the old best into this run's folder first."""
+    if not best_run.reward_matches(BEST_AVG_SCORE_FILE, tmnf_env.reward_config()):
+        run.archive_checkpoint(CHKPT_DIR, "previous-best")
+        print(f"[best] The saved best was scored under a different reward: copied it to "
+              f"{run.path / 'checkpoints' / 'previous-best'}; best score starts afresh.", flush=True)
+
+
 def main():
     # `docker stop` sends SIGTERM; handle it like Ctrl-C so shutdown saves a snapshot.
     signal.signal(signal.SIGTERM, raise_keyboard_interrupt)
@@ -207,6 +220,8 @@ def main():
         map_name=track_features.MAP_NAME, map_file=MAP_FILE, tracks_dir=track_features.TRACKS_DIR,
         loaded_checkpoint=load_dir,
     )
+
+    keep_previous_best(run)
 
     # Scales with N: launching instances is staggered, and this many Wine/GL
     # processes starting up concurrently is slower than the single-instance
@@ -237,6 +252,7 @@ def main():
             "chkpt_dir": CHKPT_DIR,
             "snapshot_dir": SNAPSHOT_DIR,
             "best_score_file": BEST_AVG_SCORE_FILE,
+            "reward": tmnf_env.reward_config(),
             "load_dir": load_dir,
             "updates_per_step": UPDATES_PER_STEP,
             "torch_threads": TORCH_THREADS,

@@ -49,6 +49,17 @@ BEST_RUN_NPZ = TMP_DIR / "best_run.npz"
 BEST_RUN_SCORE_FILE = TMP_DIR / "best_run_score.json"
 
 
+def keep_previous_best(run):
+    """The saved best checkpoint's score was earned under a different reward
+    (e.g. TM_WALL_PENALTY changed), so it can't be compared with this run's:
+    the run starts its best score afresh and will overwrite agent/tmp/sac/ at
+    its first improvement. Copy the old best into this run's folder first."""
+    if not best_run.reward_matches(BEST_AVG_SCORE_FILE, tmnf_env.reward_config()):
+        run.archive_checkpoint(CHKPT_DIR, "previous-best")
+        print(f"[best] The saved best was scored under a different reward: copied it to "
+              f"{run.path / 'checkpoints' / 'previous-best'}; best score starts afresh.", flush=True)
+
+
 def main():
     print("=== TMRC SAC Trainer Starting ===")
     print(f"TMNF_DIR: {os.environ.get('TMNF_DIR', 'NOT SET')}")
@@ -63,6 +74,7 @@ def main():
         loaded_checkpoint=CHKPT_DIR if LOAD_CHECKPOINT else None,
     )
 
+    keep_previous_best(run)
     start_tmnf(log_name="tmloader-train.log")
 
     # We do NOT use a raw TCP port check here — the plugin's Render() detects
@@ -88,8 +100,9 @@ def main():
     # resumed session's very first episode would "beat" an in-memory -inf
     # baseline and silently overwrite a genuinely better checkpoint/recording
     # from a previous session (see experiments/best_run.py).
-    best_score = best_run.load_score(BEST_AVG_SCORE_FILE, "avg_score")
-    best_run_score = best_run.load_score(BEST_RUN_SCORE_FILE, "score")
+    reward = tmnf_env.reward_config()
+    best_score = best_run.load_score(BEST_AVG_SCORE_FILE, "avg_score", reward)
+    best_run_score = best_run.load_score(BEST_RUN_SCORE_FILE, "score", reward)
     print(f"Resuming best avg_score={best_score}, best single-run score={best_run_score}")
     score_history = []
     status = "completed"
@@ -119,11 +132,12 @@ def main():
             if not EVAL_ONLY and len(score_history) >= AVG_WINDOW and avg_score > best_score:
                 best_score = avg_score
                 agent.save_models()
-                best_run.save_score(BEST_AVG_SCORE_FILE, "avg_score", best_score)
+                best_run.save_score(BEST_AVG_SCORE_FILE, "avg_score", best_score, reward=reward)
 
             if score > best_run_score:
                 best_run_score = score
-                best_run.save_best_run(BEST_RUN_NPZ, BEST_RUN_SCORE_FILE, states[:-1], actions, rewards, score, info)
+                best_run.save_best_run(BEST_RUN_NPZ, BEST_RUN_SCORE_FILE, states[:-1], actions, rewards, score, info,
+                                       reward=reward)
 
             print(f"episode {i} score {score:.1f} avg_score {avg_score:.1f} done_reason={info.get('done_reason')}")
     except KeyboardInterrupt:

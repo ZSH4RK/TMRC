@@ -54,6 +54,23 @@ MIN_PROGRESS_M = 1.0
 REWARD_PER_M_ADVANCED = 1.0
 REWARD_PER_MS = -6 / 5000
 FINISH_BONUS = 100.0
+# Taken off the reward for every step that ends touching a wall
+# (has_any_lateral_contact). Scraping a wall already costs speed, so progress
+# reward falls anyway; this makes it cost more, to teach the car to stay off
+# them. For scale: a step at 200 km/h earns ~2.8 (2.8 m of progress), so 1.0
+# takes away about a third of it. 0 turns it off (the original reward).
+WALL_PENALTY = float(os.environ.get("TM_WALL_PENALTY", "1.0"))
+
+
+def reward_config() -> dict:
+    """The reward settings. Scores, and the best-score thresholds saved with
+    checkpoints, are only comparable between runs where these match."""
+    return {
+        "reward_per_m_advanced": REWARD_PER_M_ADVANCED,
+        "reward_per_ms": REWARD_PER_MS,
+        "finish_bonus": FINISH_BONUS,
+        "wall_penalty": WALL_PENALTY,
+    }
 
 
 # Max no-op steps to wait for race_time to return to the countdown after
@@ -83,9 +100,7 @@ def describe(map_file=None, game_speed=DEFAULT_GAME_SPEED) -> dict:
         "max_episode_ms": MAX_EPISODE_MS,
         "stuck_ms": STUCK_MS,
         "min_progress_m": MIN_PROGRESS_M,
-        "reward_per_m_advanced": REWARD_PER_M_ADVANCED,
-        "reward_per_ms": REWARD_PER_MS,
-        "finish_bonus": FINISH_BONUS,
+        **reward_config(),
     }
 
 
@@ -114,6 +129,8 @@ class TMNFEnv:
         self._finish_time_ms = None
         # Race time of each checkpoint crossed this episode, the finish last.
         self._cp_times = []
+        # Whether the car touched a wall at the latest step.
+        self._wall_contact = False
         self._map_loaded = False
 
         # The raw state behind the latest observation, for agents that decide
@@ -213,6 +230,8 @@ class TMNFEnv:
         delta = track_features.progress_delta(self._prev_progress, progress)
         dt_ms = race_time - self._prev_race_time
         reward = REWARD_PER_M_ADVANCED * delta + REWARD_PER_MS * dt_ms
+        if self._wall_contact:
+            reward -= WALL_PENALTY
 
         self._distance_m += delta
         if self._distance_m >= self._stuck_ref_m + MIN_PROGRESS_M:
@@ -236,6 +255,7 @@ class TMNFEnv:
             "position": game_state["position"],
             "velocity": game_state["velocity"],
             "direction": game_state["direction"],
+            "wall_contact": self._wall_contact,
             # Health: the plugin blocks the game until we answer, so race time
             # should advance exactly STEP_MS per step. Anything else means a
             # step was missed (e.g. a plugin timeout) and the run isn't the
@@ -284,6 +304,9 @@ class TMNFEnv:
             if msg_type == MessageType.SC_RUN_STEP_SYNC:
                 race_time = struct.unpack("i", sock.recv(4))[0]
                 state = self.tm.get_simulation_state()
+                # Kept out of game_state: that's the competition's decide()
+                # interface, which doesn't include it.
+                self._wall_contact = bool(state.scene_mobil.has_any_lateral_contact)
                 rot = state.rotation_matrix  # 3x3, columns are car's local X/Y/Z axes in world space
                 game_state = {
                     "position": (state.position[0], state.position[1], state.position[2]),

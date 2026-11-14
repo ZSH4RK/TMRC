@@ -17,7 +17,7 @@ EPISODE_FIELDS = [
     "race_time_ms", "medal", "gap_to_author_ms", "distance_m", "track_pct",
     "checkpoint_times_ms", "final_x", "final_y", "final_z", "score", "steps",
     "mean_speed_kmh", "max_speed_kmh", "accelerate_pct", "brake_pct", "steer_pct",
-    "steer_changes_per_s", "step_gaps", "agent_ms_mean", "agent_ms_max",
+    "steer_changes_per_s", "wall_hits", "wall_contact_pct", "step_gaps", "agent_ms_mean", "agent_ms_max",
     "wall_s", "replay",
 ]
 
@@ -27,6 +27,7 @@ _NUMERIC = {
     "max_speed_kmh": float, "agent_ms_mean": float, "agent_ms_max": float, "wall_s": float,
     "final_x": float, "final_y": float, "final_z": float, "accelerate_pct": float,
     "brake_pct": float, "steer_pct": float, "steer_changes_per_s": float,
+    "wall_hits": int, "wall_contact_pct": float,
 }
 
 MEDALS = ("author", "gold", "silver", "bronze")

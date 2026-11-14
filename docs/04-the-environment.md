@@ -71,6 +71,10 @@ The reward is what reinforcement learning maximises. In this environment, each s
 - **+1 per metre** moved forward along the track's centre line (negative if going backwards)
 - **-0.0012 per millisecond** of game time, so -0.06 for each 50ms step. Faster is better.
 - **+100** for crossing the finish line
+- **-1 for every step that ends touching a wall** (`TM_WALL_PENALTY`). Scraping
+  a wall already costs speed, and so progress; this makes it cost more. For
+  scale, a step at 200 km/h earns about +2.8. Each episode's `wall_hits` and
+  `wall_contact_pct` columns show how much the car touched walls.
 
 The constants are at the top of `agent/env.py`. Changing them changes what
 "good" means, and you're welcome to experiment. Rewards from runs with

@@ -50,7 +50,7 @@ class RecordingEnv:
             input_time_ms=info["input_time_ms"], race_time_ms=info["race_time_ms"], inputs=info["inputs"],
             position=info["position"], velocity=info["velocity"], direction=info["direction"],
             reward=reward, action=action, obs=self._obs, agent_ms=info.get("agent_ms"),
-            step_gap=info.get("step_gap", False),
+            step_gap=info.get("step_gap", False), wall_contact=info.get("wall_contact", False),
         )
         self._obs = obs
         if done:

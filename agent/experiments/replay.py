@@ -125,9 +125,12 @@ class EpisodeRecorder:
         self._action, self._obs = [], []
         self._agent_ms = []
         self.step_gaps = 0
+        self.wall_steps = 0      # steps ending against a wall
+        self.wall_hits = 0       # separate contacts: steps where contact began
+        self._was_on_wall = False
 
     def add(self, *, input_time_ms, race_time_ms, inputs, position, velocity, direction,
-            reward=0.0, action=None, obs=None, agent_ms=None, step_gap=False):
+            reward=0.0, action=None, obs=None, agent_ms=None, step_gap=False, wall_contact=False):
         self._input_time.append(input_time_ms)
         self._race_time.append(race_time_ms)
         self._inputs.append([bool(inputs[key]) for key in INPUT_KEYS])
@@ -142,6 +145,9 @@ class EpisodeRecorder:
         if agent_ms is not None:
             self._agent_ms.append(agent_ms)
         self.step_gaps += int(bool(step_gap))
+        self.wall_steps += int(bool(wall_contact))
+        self.wall_hits += int(bool(wall_contact) and not self._was_on_wall)
+        self._was_on_wall = bool(wall_contact)
 
     def __len__(self):
         return len(self._race_time)
@@ -170,6 +176,8 @@ class EpisodeRecorder:
             "score": float(np.sum(self._reward)) if self._reward else 0.0,
             "mean_speed_kmh": round(float(speeds.mean()), 2) if speeds.size else None,
             "max_speed_kmh": round(float(speeds.max()), 2) if speeds.size else None,
+            "wall_hits": self.wall_hits,
+            "wall_contact_pct": round(100 * self.wall_steps / len(self), 1) if len(self) else None,
             **stats.input_stats(self._inputs, (self._race_time[-1] - self.start_time_ms) if self._race_time else None),
             "step_gaps": self.step_gaps,
             "agent_ms_mean": round(float(np.mean(self._agent_ms)), 3) if self._agent_ms else None,
