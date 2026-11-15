@@ -64,7 +64,7 @@ Used by `TM_EVAL_AGENT` and `TM_AGENT`:
 | Setting | Default | Meaning |
 |---|---|---|
 | `TM_LOAD_CHECKPOINT` | `false` | `true`: continue from the best saved network · `latest`: from the most recent one |
-| `TM_N_STEPS` | `2000000` | stop after this many steps |
+| `TM_N_STEPS` | `0` | stop after this many steps, summed over all instances; `0` trains until stopped (Ctrl-C or `docker stop`) |
 | `TM_UPDATES_PER_STEP` | `1.0` | learning updates per step of experience |
 | `TM_EVAL_ONLY` | `false` | drive the loaded network inside the trainer without learning (`eval` mode is the cleaner way to test) |
 | `TM_TORCH_THREADS` | `2` | CPU threads for the learner |

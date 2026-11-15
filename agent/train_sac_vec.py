@@ -59,7 +59,8 @@ NUM_INSTANCES = int(os.environ.get("TM_NUM_INSTANCES", "4"))
 BASE_PORT = int(os.environ.get("TM_BASE_PORT", "8775"))
 GAME_SPEED = float(os.environ.get("TM_GAME_SPEED", "5.0"))
 MAP_FILE = os.environ.get("TM_MAP_FILE", f"{track_features.MAP_NAME}.Challenge.Gbx")
-N_STEPS = int(os.environ.get("TM_N_STEPS", 2_000_000))
+# Stop after this many steps (summed over all instances); 0 trains until stopped.
+N_STEPS = int(float(os.environ.get("TM_N_STEPS", "0")))
 LOAD_CHECKPOINT = os.environ.get("TM_LOAD_CHECKPOINT", "false").lower()
 EVAL_ONLY = os.environ.get("TM_EVAL_ONLY", "false").lower() == "true"
 UPDATES_PER_STEP = float(os.environ.get("TM_UPDATES_PER_STEP", "1.0"))
@@ -268,7 +269,7 @@ def main():
     last_steps = 0
     status = "completed"
     try:
-        while not trainer.stop.is_set() and trainer.steps < N_STEPS:
+        while not trainer.stop.is_set() and (N_STEPS <= 0 or trainer.steps < N_STEPS):
             time.sleep(1)
             if learner is not None and not learner.is_alive():
                 raise RuntimeError("Learner process died")
