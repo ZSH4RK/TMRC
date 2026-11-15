@@ -13,6 +13,19 @@ from torch import nn, optim
 from torch.distributions.normal import Normal
 
 
+def load_weights(network, path):
+    """Load a saved state dict into network, with a clear error when it was
+    trained on a different observation (track_features.STATE_DIM changed)."""
+    state = torch.load(path, map_location=network.device)
+    saved, expected = state["fc1.weight"].shape[1], network.fc1.weight.shape[1]
+    if saved != expected:
+        raise ValueError(
+            f"{path} takes {saved} inputs but this network takes {expected}: it was trained "
+            f"with a different observation (track_features.STATE_DIM). Train afresh "
+            f"(TM_LOAD_CHECKPOINT=false) or use a checkpoint from the same code.")
+    network.load_state_dict(state)
+
+
 class CriticNetwork(nn.Module):
     def __init__(self, beta, input_dims, n_actions, fc1_dims=256, fc2_dims=256, name="critic", chkpt_dir="tmp/sac"):
         super(CriticNetwork, self).__init__()
@@ -47,7 +60,7 @@ class CriticNetwork(nn.Module):
         torch.save(self.state_dict(), self.checkpoint_file)
 
     def load_checkpoint(self):
-        self.load_state_dict(torch.load(self.checkpoint_file, map_location=self.device))
+        load_weights(self, self.checkpoint_file)
 
 
 class ValueNetwork(nn.Module):
@@ -84,7 +97,7 @@ class ValueNetwork(nn.Module):
         torch.save(self.state_dict(), self.checkpoint_file)
 
     def load_checkpoint(self):
-        self.load_state_dict(torch.load(self.checkpoint_file, map_location=self.device))
+        load_weights(self, self.checkpoint_file)
 
 
 class ActorNetwork(nn.Module):
@@ -148,4 +161,4 @@ class ActorNetwork(nn.Module):
         torch.save(self.state_dict(), self.checkpoint_file)
 
     def load_checkpoint(self):
-        self.load_state_dict(torch.load(self.checkpoint_file, map_location=self.device))
+        load_weights(self, self.checkpoint_file)

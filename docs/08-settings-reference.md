@@ -69,6 +69,10 @@ Used by `TM_EVAL_AGENT` and `TM_AGENT`:
 | `TM_EVAL_ONLY` | `false` | drive the loaded network inside the trainer without learning (`eval` mode is the cleaner way to test) |
 | `TM_TORCH_THREADS` | `2` | CPU threads for the learner |
 | `TM_WALL_PENALTY` | `1.0` | reward taken off for each step that ends touching a wall; `0` turns it off. Changing it changes every score, so the next training run copies the saved best network into its results folder (`checkpoints/previous-best/`) and starts its best score afresh |
+| `TM_REWARD_PER_MS` | `-0.0012` | reward per millisecond of race time. At the default a whole second costs 1.2, against about 1,566 for a finished lap, so the car learns to give up speed for a safer finish. More negative (e.g. `-0.005`) pays more for speed. Changes every score, like `TM_WALL_PENALTY` |
+| `TM_REWARD_PER_M` | `1.0` | reward per metre of progress along the centre line |
+| `TM_FINISH_BONUS` | `100` | reward for crossing the finish line |
+| `TM_FINISH_APPROACH_M` | `50` | over the last this-many metres, progress counts the car's distance from the centre line against it (none at the start of that stretch, all of it at the finish), so a car beside the finish gate is rewarded for moving towards it. `0` turns it off |
 | `TM_REPLAY_SIZE` | `1000000` | steps of experience the learner keeps (about 1,500 A03 episodes with 6 instances). Too small and it forgets mistakes it stopped making, then makes them again. Uses about 125 MB per million |
 | `TM_LR` | `0.0003` | learning rate of all the networks |
 | `TM_LR_DECAY_UPDATES` | `0` | learning updates over which the learning rate falls in a straight line to `TM_LR` × `TM_LR_FINAL`, then stays there. `0` keeps it constant. Training past its best and getting worse is the sign to try it: e.g. set it to the `updates` count in `learner.csv` where scores peaked |
@@ -82,7 +86,7 @@ Some things are constants in code, not settings. Change them in the file and reb
 
 | What | Where |
 |---|---|
-| Reward amounts, episode time limit, "stuck" rule | top of `agent/env.py` |
+| Episode time limit, "stuck" rule | top of `agent/env.py` |
 | Ray angles, observation scaling, key deadzones | `agent/track_features.py` |
 | SAC network size, batch size, discount, reward scale | `agent/sac/agent.py` |
 

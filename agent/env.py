@@ -51,9 +51,19 @@ MIN_PROGRESS_M = 1.0
 # those were tuned for a different agent/observation setup — but the same
 # idea: reward forward progress along the centerline, penalize time taken,
 # and give a one-off bonus for actually finishing.
-REWARD_PER_M_ADVANCED = 1.0
-REWARD_PER_MS = -6 / 5000
-FINISH_BONUS = 100.0
+REWARD_PER_M_ADVANCED = float(os.environ.get("TM_REWARD_PER_M", "1.0"))
+# Per ms of race time. The default makes a whole second cost 1.2, against
+# ~1,566 for a finished lap, so the car gains little by being faster and
+# learns to trade speed for a safer finish. More negative pays for speed.
+REWARD_PER_MS = float(os.environ.get("TM_REWARD_PER_MS", str(-6 / 5000)))
+FINISH_BONUS = float(os.environ.get("TM_FINISH_BONUS", "100.0"))
+# Over the last this-many metres of the centerline, progress counts the car's
+# distance from the centerline against it, rising from none to all of it at the
+# finish. Progress along the centerline stops at its end, so a car that reaches
+# the finish beside the gate otherwise has nothing left to earn by moving
+# towards it, and is ended as stuck: on A03 this was 90% of failures once the
+# car could drive the track. 0 turns it off.
+FINISH_APPROACH_M = float(os.environ.get("TM_FINISH_APPROACH_M", "50.0"))
 # Taken off the reward for every step that ends touching a wall
 # (has_any_lateral_contact). Scraping a wall already costs speed, so progress
 # reward falls anyway; this makes it cost more, to teach the car to stay off
@@ -70,7 +80,18 @@ def reward_config() -> dict:
         "reward_per_ms": REWARD_PER_MS,
         "finish_bonus": FINISH_BONUS,
         "wall_penalty": WALL_PENALTY,
+        "finish_approach_m": FINISH_APPROACH_M,
     }
+
+
+def shaped_progress(progress: float, offset_m: float) -> float:
+    """Progress for the reward: progress along the centerline, less a growing
+    share of the distance from it over the last FINISH_APPROACH_M metres."""
+    if FINISH_APPROACH_M <= 0:
+        return progress
+    start = track_features.TRACK_LENGTH - FINISH_APPROACH_M
+    weight = min(max((progress - start) / FINISH_APPROACH_M, 0.0), 1.0)
+    return progress - weight * offset_m
 
 
 # Max no-op steps to wait for race_time to return to the countdown after
@@ -122,6 +143,8 @@ class TMNFEnv:
         self.track = TrackInterpolator(map_name=track_features.MAP_NAME)
 
         self._prev_progress = 0.0
+        self._prev_shaped = 0.0
+        self._shaped_m = 0.0
         self._prev_race_time = 0
         self._steps_without_progress = 0
         self._distance_m = 0.0
@@ -195,10 +218,13 @@ class TMNFEnv:
             self.tm.sock.sendall(struct.pack("i", MessageType.SC_RUN_STEP_SYNC))
             game_state, race_time = self._wait_for_step()
 
-        self._prev_progress = track_features.progress_along_track(*self._xz(game_state))
+        progress, offset = track_features.track_position(*self._xz(game_state))
+        self._prev_progress = progress
+        self._prev_shaped = shaped_progress(progress, offset)
         self._prev_race_time = race_time
         self._steps_without_progress = 0
         self._distance_m = 0.0
+        self._shaped_m = 0.0
         self._stuck_ref_m = 0.0
         self._finish_time_ms = None
         self._cp_times = []
@@ -226,20 +252,26 @@ class TMNFEnv:
         game_ms = (time.perf_counter() - called_at) * 1000
         obs = self._build_obs(game_state)
 
-        progress = track_features.progress_along_track(*self._xz(game_state))
+        progress, offset = track_features.track_position(*self._xz(game_state))
+        shaped = shaped_progress(progress, offset)
         delta = track_features.progress_delta(self._prev_progress, progress)
+        shaped_delta = track_features.progress_delta(self._prev_shaped, shaped)
         dt_ms = race_time - self._prev_race_time
-        reward = REWARD_PER_M_ADVANCED * delta + REWARD_PER_MS * dt_ms
+        reward = REWARD_PER_M_ADVANCED * shaped_delta + REWARD_PER_MS * dt_ms
         if self._wall_contact:
             reward -= WALL_PENALTY
 
+        # distance_m reports the plain centerline distance; the stuck rule
+        # uses the shaped one, so closing in on the finish gate counts.
         self._distance_m += delta
-        if self._distance_m >= self._stuck_ref_m + MIN_PROGRESS_M:
-            self._stuck_ref_m = self._distance_m
+        self._shaped_m += shaped_delta
+        if self._shaped_m >= self._stuck_ref_m + MIN_PROGRESS_M:
+            self._stuck_ref_m = self._shaped_m
             self._steps_without_progress = 0
         else:
             self._steps_without_progress += 1
         self._prev_progress = progress
+        self._prev_shaped = shaped
         self._prev_race_time = race_time
 
         done = False

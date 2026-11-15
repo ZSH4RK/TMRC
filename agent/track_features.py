@@ -20,8 +20,8 @@ import numpy as np
 RAY_ANGLES = [-90, -45, -10, 0, 10, 45, 90]
 
 # Wall distances (len(RAY_ANGLES)) + vx, vz, dx, dz, angle_to_centreline,
-# vel_angle_to_centreline, dist_to_centreline.
-STATE_DIM = len(RAY_ANGLES) + 7
+# vel_angle_to_centreline, dist_to_centreline, ahead_dist.
+STATE_DIM = len(RAY_ANGLES) + 8
 
 MAP_NAME = os.environ.get("TM_MAP_NAME", "A03-Race")
 
@@ -35,6 +35,10 @@ STEP_MS = int(os.environ.get("TM_STEP_MS", "50"))
 # dominates the networks' inputs. Wall distance saturates: only nearby walls
 # affect driving, and rays can otherwise reach 500m.
 MAX_WALL_DIST_M = 100.0
+# ...except straight ahead, where the car needs to see further than 100m: at
+# 400 km/h that's under a second. The straight-ahead ray is given a second
+# time, scaled to the rays' full 500m range (interpolate_track.cast_rays).
+MAX_AHEAD_DIST_M = 500.0
 MAX_SPEED_MS = 100.0
 MAX_CENTRELINE_DIST_M = 20.0
 
@@ -101,6 +105,17 @@ def nearest_midpoint(car_x, car_z, lookahead=30.0):
     return idx, _mid_points[idx], _mid_points[ahead_idx]
 
 
+def track_position(car_x, car_z):
+    """(progress, offset): progress_along_track, and the car's distance (m)
+    from the centerline at that point."""
+    to_car = np.array([car_x, car_z]) - _seg_starts
+    t = np.clip(np.sum(to_car * _seg_vectors, axis=1) / _seg_lengths_sq, 0.0, 1.0)
+    offsets = to_car - t[:, None] * _seg_vectors
+    offsets_sq = np.sum(offsets ** 2, axis=1)
+    idx = int(np.argmin(offsets_sq))
+    return float(_cum_dist[idx] + t[idx] * _segment_lengths[idx]), float(np.sqrt(offsets_sq[idx]))
+
+
 def progress_along_track(car_x, car_z):
     """Cumulative distance (meters) along the centerline at the car's projection
     onto its nearest centerline segment.
@@ -113,11 +128,7 @@ def progress_along_track(car_x, car_z):
     line. Use `progress_delta` to turn two readings into a signed advance that
     handles the wraparound correctly.
     """
-    to_car = np.array([car_x, car_z]) - _seg_starts
-    t = np.clip(np.sum(to_car * _seg_vectors, axis=1) / _seg_lengths_sq, 0.0, 1.0)
-    offsets = to_car - t[:, None] * _seg_vectors
-    idx = int(np.argmin(np.sum(offsets ** 2, axis=1)))
-    return float(_cum_dist[idx] + t[idx] * _segment_lengths[idx])
+    return track_position(car_x, car_z)[0]
 
 
 def progress_delta(prev, curr):
@@ -169,7 +180,10 @@ def build_state(game_state, wall_distances):
 
     # No hit within range means the wall is far away, the same as a saturated distance.
     wall_dists = [1.0 if d is None else min(d / MAX_WALL_DIST_M, 1.0) for d, _wall in wall_distances]
-    # Wall distances (7), velocity x/z, direction x/z, angle to centre, vel angle to centre, distance to centre
+    ahead, _wall = wall_distances[RAY_ANGLES.index(0)]
+    ahead_dist = 1.0 if ahead is None else min(ahead / MAX_AHEAD_DIST_M, 1.0)
+    # Wall distances (7), velocity x/z, direction x/z, angle to centre, vel angle to centre,
+    # distance to centre, distance ahead
     return wall_dists + [
         vx / MAX_SPEED_MS,
         vz / MAX_SPEED_MS,
@@ -178,6 +192,7 @@ def build_state(game_state, wall_distances):
         angle_to_centreline_deg / 180.0,
         vel_angle_to_centreline_deg / 180.0,
         dist_to_centreline / MAX_CENTRELINE_DIST_M,
+        ahead_dist,
     ]
 
 

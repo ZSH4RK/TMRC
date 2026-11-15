@@ -99,7 +99,7 @@ These are just suggestions. Ignore them if you have your own plan.
 - **Print what your agent sees.** Add `print(wall_distances)` inside `decide`, run
   it, and watch the output while looking at the car in the browser.
 - **Use the observation the trainers use.** `track_features.build_state(game_state, wall_distances)`
-  turns the inputs into 14 numbers scaled to about -1..1 (see
+  turns the inputs into 15 numbers scaled to about -1..1 (see
   [page 4](04-the-environment.md#the-observation)). `examples/linear_agent.py` does this.
 - **Use the track's centre line.** `track_features.progress_along_track(x, z)` says how
   far along the track the car is, and `track_features.nearest_midpoint(x, z)`

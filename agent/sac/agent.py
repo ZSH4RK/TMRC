@@ -27,7 +27,7 @@ import torch
 import torch.nn.functional as F
 
 from .buffers import ReplayBuffer
-from .networks import ActorNetwork, CriticNetwork, ValueNetwork
+from .networks import ActorNetwork, CriticNetwork, ValueNetwork, load_weights
 
 
 class SACAgent:
@@ -147,7 +147,7 @@ class SACAgent:
                 network.load_checkpoint()
             else:
                 path = os.path.join(checkpoint_dir, network.name + "_sac")
-                network.load_state_dict(torch.load(path, map_location=network.device))
+                load_weights(network, path)
         self._load_state(checkpoint_dir or self.chkpt_dir)
 
     def save_snapshot(self, checkpoint_dir):

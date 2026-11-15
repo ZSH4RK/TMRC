@@ -1,4 +1,3 @@
-from pathlib import Path
 
 import pytest
 
@@ -43,12 +42,13 @@ def test_baselines():
     assert [r1.act({}, [], None) for _ in range(20)] == [r2.act({}, [], None) for _ in range(20)]
 
 
-def test_sac_policy_loads_checkpoint():
-    if not (Path(__file__).parent.parent / "agent" / "tmp" / "sac" / "actor_sac").exists():
-        pytest.skip("no trained checkpoint in agent/tmp/sac")
+def test_sac_policy_loads_checkpoint(tmp_path):
     import numpy as np
 
     import track_features
-    policy = load_policy("sac:tmp/sac")
+    from sac.networks import ActorNetwork
+    ActorNetwork(0.0, [track_features.STATE_DIM], [1.0, 1.0], name="actor",
+                 chkpt_dir=str(tmp_path), device="cpu").save_checkpoint()
+    policy = load_policy(f"sac:{tmp_path}")
     inputs = policy.act({}, [], np.zeros(track_features.STATE_DIM, dtype=np.float32))
     assert set(inputs) == {"left", "right", "accelerate", "brake"}

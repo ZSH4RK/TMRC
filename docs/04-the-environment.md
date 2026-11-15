@@ -36,7 +36,7 @@ hold the raw inputs a `decide()` agent would get, so you can use those instead o
 
 ## The observation
 
-`obs` is a NumPy array of **14 numbers**, built by `track_features.build_state()`.
+`obs` is a NumPy array of **15 numbers**, built by `track_features.build_state()`.
 Each is scaled to roughly -1..1, which suits neural networks:
 
 | Index | Meaning | Scaling |
@@ -47,6 +47,10 @@ Each is scaled to roughly -1..1, which suits neural networks:
 | 11 | angle between where the car points and the track direction | degrees ÷ 180 |
 | 12 | angle between where the car is *moving* and the track direction | degrees ÷ 180 |
 | 13 | distance from the centre line | metres ÷ 20 |
+| 14 | wall distance straight ahead, seen further | metres ÷ 500, capped at 1 (no hit = 1) |
+
+Index 14 repeats the straight-ahead ray (index 3) on a longer scale: index 3
+stops at 100 m, which at 400 km/h is under a second of warning.
 
 You don't have to use it. You could build your own observation from
 `env.last_game_state` and `env.last_wall_distances`.
@@ -69,14 +73,21 @@ handful of choices instead (like "left + accelerate"), use `env.step_inputs()` d
 The reward is what reinforcement learning maximises. In this environment, each step gives:
 
 - **+1 per metre** moved forward along the track's centre line (negative if going backwards)
-- **-0.0012 per millisecond** of game time, so -0.06 for each 50ms step. Faster is better.
-- **+100** for crossing the finish line
+  (`TM_REWARD_PER_M`). Over the last 50 m (`TM_FINISH_APPROACH_M`), the car's
+  distance from the centre line counts against its progress, all of it by the
+  finish line, so a car that arrives beside the finish gate still gains by
+  moving towards it, and isn't ended as stuck while it does.
+- **-0.0012 per millisecond** of game time, so -0.06 for each 50ms step
+  (`TM_REWARD_PER_MS`). Faster is better, but only slightly: a whole second
+  costs 1.2. Make it more negative to pay more for speed.
+- **+100** for crossing the finish line (`TM_FINISH_BONUS`)
 - **-1 for every step that ends touching a wall** (`TM_WALL_PENALTY`). Scraping
   a wall already costs speed, and so progress; this makes it cost more. For
   scale, a step at 200 km/h earns about +2.8. Each episode's `wall_hits` and
   `wall_contact_pct` columns show how much the car touched walls.
 
-The constants are at the top of `agent/env.py`. Changing them changes what
+They are set at the top of `agent/env.py`, and can be changed with the settings
+named (see [page 8](08-settings-reference.md)). Changing them changes what
 "good" means, and you're welcome to experiment. Rewards from runs with
 different reward settings can't be compared with each other, though. That's why
 the framework ranks results by **race result** (finished? how fast? how far?)
@@ -90,7 +101,7 @@ instead (see [page 7](07-fair-experiments.md)).
 |---|---|
 | `finished` | crossed the finish line |
 | `timeout` | 120 seconds of game time |
-| `stuck` | less than 1 metre of progress in 3 seconds |
+| `stuck` | less than 1 metre of progress in 3 seconds (progress as the reward counts it, so moving towards the finish gate counts) |
 
 ## Recording what your learner does
 
