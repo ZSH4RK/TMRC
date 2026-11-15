@@ -65,8 +65,8 @@ TM_LOAD_CHECKPOINT=latest TM_MODE=train docker compose up --build   # carry on f
 - Saved networks go in `agent/tmp/sac/` (best so far) and `agent/tmp/sac_latest/`
   (most recent), and are also copied into each run's `checkpoints/` folder.
 - `[PB]` lines in the output announce new personal bests (fastest finish, furthest
-  distance) for the map. They are kept per map in `results/pb.json`, so a new run
-  only announces records that beat every earlier run on that map.
+  distance) within the run. They are kept in the run's own `pb.json`
+  (`results/<run>/pb.json`); each run starts afresh.
 - To test the trained network properly (no exploration noise):
   `TM_MODE=eval TM_EVAL_AGENT=sac:tmp/sac docker compose up --build`
 

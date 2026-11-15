@@ -108,13 +108,11 @@ class Trainer:
         self.best_run_score = best_run.load_score(BEST_RUN_SCORE_FILE, "score", self.reward)
         print(f"Resuming best avg_score={self.best_score}, best single-run score={self.best_run_score}")
 
-        # Personal bests for this map: fastest finish and furthest distance,
-        # kept in results/pb.json so a restart doesn't re-announce old records.
-        self.pb = PersonalBest(run.path.parent, track_features.MAP_NAME,
-                               run.manifest.get("game", {}).get("track_csv_sha256"))
+        # This run's personal bests: fastest finish and furthest distance,
+        # kept in the run's own pb.json.
+        self.pb = PersonalBest(run.path, track_features.MAP_NAME)
         self.pb_lock = threading.Lock()
-        print(f"[PB] {track_features.MAP_NAME}: best time={self.pb.time_ms}ms, "
-              f"furthest distance={self.pb.distance_m:.1f}m ({self.pb.path})")
+        print(f"[PB] {track_features.MAP_NAME}: this run's personal bests go in {self.pb.path}")
 
     def run_instance(self, index: int, env: RecordingEnv):
         """Drive one game until asked to stop. The body of each game thread."""
@@ -166,7 +164,7 @@ class Trainer:
         dist = info.get("distance_m", 0.0)
         finished = info.get("done_reason") == "finished"
         with self.pb_lock:
-            change = self.pb.update(self.run.path.name, episode, finished, info.get("race_time_ms"), dist)
+            change = self.pb.update(episode, finished, info.get("race_time_ms"), dist)
         if change and change[0] == "time":
             prev = "none" if change[1] == float("inf") else f"{change[1] / 1000:.2f}s"
             print(f"[PB] NEW PB: {info['race_time_ms'] / 1000:.2f}s (prev {prev}) instance {index}, episode {episode}", flush=True)
